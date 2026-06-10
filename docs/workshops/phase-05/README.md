@@ -162,6 +162,21 @@ public static async Task<AvailabilityResult> ConsultarDisponibilidadeAsync(
 
 As queries vivem em `Data/FifaQueryRepository.cs`, com **Dapper + Microsoft.Data.SqlClient** — o mesmo padrão de `src/Fifa2026.V2.Functions/Data/`. **Todas as queries são parametrizadas** (`@MatchId`, `@IngressoId`, `@Stage`), sem concatenação de string — defesa contra SQL injection. O acesso é **somente leitura**: o MCP Server nunca grava (compras são da Function F1).
 
+### 3.5 Fase A — Sentidos completos (tools 4-7) — Story 2.8
+
+A primeira versão do MCP Server (S2.5) tinha **3 tools**. Na **Fase A** (Story 2.8), o chatbot ganha "sentidos completos": passamos de 3 para **7 tools read-only**, permitindo "explorar todo o sistema da Copa" — partidas com placar, classificação calculada de grupos, dados de times e de estádios. As 4 novas tools seguem **exatamente** o mesmo padrão das 3 originais (método estático, dependências por DI, `[Description]` PT-BR rica, `ReadOnly = true`) e **não abrem nenhum vetor de escrita** no banco (regra de ouro: o MCP Server nunca grava).
+
+| Tool | Parâmetros | Retorna | O que consulta | Pergunta canônica |
+|---|---|---|---|---|
+| `consultar_partidas` | `time`, `fase`, `estadio`, `grupo`, `data` (YYYY-MM-DD), `apenasComResultado` — **todos opcionais** | lista de `{ partida, data, horario, estadio, fase, grupo, placarMandante, placarVisitante, status }` | `matches` + `teams` (mandante/visitante) + `stadiums`; `fase` em linguagem natural → `matches.stage` | "Quando o Brasil joga?" |
+| `consultar_classificacao` | `grupo` (obrigatório) | lista de `{ posicao, time, jogos, vitorias, empates, derrotas, golsPro, golsContra, saldo, pontos }` | **calculada por agregação** de `matches` (não existe tabela `standings`); grupos sem jogos disputados → lista vazia | "Como está o grupo A?" |
+| `consultar_time` | `nome` (obrigatório — nome ou código) | `{ encontrado, nome, codigo, grupo, confederacao, rankingFifa, bandeira }` | `teams` | "Em que grupo está a Argentina?" |
+| `consultar_estadio` | `nome` (obrigatório — estádio ou cidade) | `{ encontrado, nome, cidade, pais, capacidade, descricao }` | `stadiums` | "Me fala do Maracanã." |
+
+> **Detalhe de schema (anti-alucinação):** o valor real de `matches.stage` para a fase de grupos é **`'Fase de Grupos'`** (com acento e espaços — migration `2026-05-08-group-stage-72.sql`), enquanto o mata-mata usa `round_of_32`/`round_of_16`/`quarter_final`/`semi_final`/`third_place`/`final`. A função `MapFaseToStage` traduz a linguagem natural ("grupos", "oitavas", ...) para esses valores, **delegando** o mata-mata à `MapRodadaToStage` já existente — sem duplicar lógica.
+
+> **Classificação sem tabela:** não há tabela `standings` no banco. A `consultar_classificacao` **calcula** a tabela de pontos por agregação (`UNION ALL` expandindo cada jogo na perspectiva de mandante e visitante, somando 3/1/0 pontos). Antes de qualquer jogo do grupo ser disputado, a tool retorna **lista vazia** — e o chatbot responde "ainda sem jogos disputados". Isso é correto, não um bug.
+
 ---
 
 ## 4. Onde vive a integração LLM: no frontend React
@@ -326,7 +341,7 @@ Antes de entrar na F5, confirme:
 - [ ] Li esta página inteira e entendi o loop **function calling** (LLM pede tool → código executa → resultado volta ao LLM).
 - [ ] Entendi por que o LLM **não inventa** disponibilidade/preço — ele **pergunta ao SQL** via tool.
 - [ ] Entendi por que a **key da LLM fica no proxy server-side** e nunca no navegador.
-- [ ] Sei que as 3 tools são `consultar_disponibilidade`, `verificar_ingresso`, `consultar_bracket`.
+- [ ] Sei que as tools originais (S2.5) são `consultar_disponibilidade`, `verificar_ingresso`, `consultar_bracket`, e que a Fase A (S2.8) adiciona `consultar_partidas`, `consultar_classificacao`, `consultar_time`, `consultar_estadio` — total **7 tools** read-only.
 - [ ] Sei que o chatbot fala com o **gateway YARP** (não direto com o MCP Server), com **Bearer Entra** (F3).
 - [ ] Tenho as F1-F4 funcionando (compra → fila → consumer → SQL; gateway; identidade; n8n).
 - [ ] Criei contas gratuitas (sem cartão) no **Google AI Studio** (Gemini) e, opcionalmente, **Groq** e **Mistral** para a demo de portabilidade.

@@ -11,8 +11,8 @@ namespace Fifa2026.V2.McpServer.Tests;
 /// WebApplicationFactory&lt;Program&gt; (TestServer) + o CLIENTE MCP oficial
 /// (ModelContextProtocol.Client 1.4.0). O cliente faz o handshake JSON-RPC 2.0
 /// real (initialize → tools/list) sobre o HttpClient do TestServer, provando que
-/// o SDK servidor está expondo as 3 tools corretamente — sem reimplementar o
-/// protocolo à mão (AC-15).
+/// o SDK servidor está expondo as tools corretamente — sem reimplementar o
+/// protocolo à mão (AC-15). Story 2.8 (Fase A) elevou o contrato de 3 → 7 tools.
 ///
 /// tools/list é metadado (nenhum handler roda) → não exige SqlConnectionString.
 /// </summary>
@@ -38,7 +38,7 @@ public sealed class McpEndpointTests : IClassFixture<WebApplicationFactory<Progr
     }
 
     [Fact]
-    public async Task Mcp_client_lists_the_three_tools_over_streamable_http()
+    public async Task Mcp_client_lists_the_seven_tools_over_streamable_http()
     {
         // HttpClient do TestServer (in-memory) aponta para o /mcp do nosso servidor.
         var httpClient = _factory.CreateClient();
@@ -59,9 +59,15 @@ public sealed class McpEndpointTests : IClassFixture<WebApplicationFactory<Progr
 
         var names = tools.Select(t => t.Name).ToHashSet();
 
+        // 3 tools herdadas de S2.5
         Assert.Contains("consultar_disponibilidade", names);
         Assert.Contains("verificar_ingresso", names);
         Assert.Contains("consultar_bracket", names);
-        Assert.Equal(3, names.Count);
+        // 4 tools da Fase A (Story 2.8)
+        Assert.Contains("consultar_partidas", names);
+        Assert.Contains("consultar_classificacao", names);
+        Assert.Contains("consultar_time", names);
+        Assert.Contains("consultar_estadio", names);
+        Assert.Equal(7, names.Count);
     }
 }

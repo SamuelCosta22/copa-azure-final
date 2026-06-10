@@ -38,4 +38,34 @@ public sealed class BracketStageMappingTests
     {
         Assert.Null(FifaQueryRepository.MapRodadaToStage(input));
     }
+
+    /// <summary>
+    /// Story 2.8 AC-1 — MapFaseToStage estende MapRodadaToStage adicionando apenas o
+    /// caso "grupos" → 'Fase de Grupos' (valor real com acento da migration
+    /// 2026-05-08-group-stage-72.sql) e delegando o mata-mata. Diferente de
+    /// MapRodadaToStage, aqui "grupos" NÃO é null (é a fase de grupos).
+    /// </summary>
+    [Theory]
+    [InlineData("grupos", "Fase de Grupos")]
+    [InlineData("Fase de Grupos", "Fase de Grupos")]
+    [InlineData("grupo A", "Fase de Grupos")]
+    [InlineData("oitavas", "round_of_16")]
+    [InlineData("quartas", "quarter_final")]
+    [InlineData("semifinal", "semi_final")]
+    [InlineData("final", "final")]
+    [InlineData("round of 32", "round_of_32")]
+    public void MapFaseToStage_maps_groups_and_delegates_knockout(string input, string expectedStage)
+    {
+        Assert.Equal(expectedStage, FifaQueryRepository.MapFaseToStage(input));
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData(null)]
+    [InlineData("fase inexistente")]
+    public void MapFaseToStage_returns_null_for_unknown_or_empty(string? input)
+    {
+        Assert.Null(FifaQueryRepository.MapFaseToStage(input));
+    }
 }

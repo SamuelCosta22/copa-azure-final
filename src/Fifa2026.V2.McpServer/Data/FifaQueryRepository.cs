@@ -192,6 +192,260 @@ public sealed class FifaQueryRepository : IFifaQueryRepository
         return rows.AsList();
     }
 
+    public async Task<IReadOnlyList<MatchResult>> ConsultarPartidasAsync(
+        string? time,
+        string? fase,
+        string? estadio,
+        string? grupo,
+        string? data,
+        bool? apenasComResultado,
+        CancellationToken cancellationToken = default)
+    {
+        // Story 2.8 AC-1 — partidas com filtros flexíveis. WHERE dinâmico com o padrão
+        // (@p IS NULL OR condição) por filtro — query parametrizada (sem concatenação).
+        // 'fase' em linguagem natural é traduzida para matches.stage via MapFaseToStage
+        // (delega a MapRodadaToStage + adiciona 'Fase de Grupos'); o valor real vai por
+        // @Stage (nunca hardcoded na string SQL). Times NULL no mata-mata → COALESCE.
+        var stage = MapFaseToStage(fase);
+
+        // Parse da data ISO no app (não na string SQL) — passa como DateTime? por @Data.
+        DateTime? dataFiltro = null;
+        if (!string.IsNullOrWhiteSpace(data)
+            && DateTime.TryParse(data, System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.None, out var parsed))
+        {
+            dataFiltro = parsed.Date;
+        }
+
+        var timeLike = string.IsNullOrWhiteSpace(time) ? null : "%" + time + "%";
+        var timeUpper = string.IsNullOrWhiteSpace(time) ? null : time.ToUpperInvariant();
+        var estadioLike = string.IsNullOrWhiteSpace(estadio) ? null : "%" + estadio + "%";
+
+        const string sql = """
+            SELECT
+                (COALESCE(ht.name, 'A definir') + ' x ' + COALESCE(at.name, 'A definir')) AS Partida,
+                m.date        AS Data,
+                m.time        AS Horario,
+                s.name        AS Estadio,
+                m.stage       AS Fase,
+                m.group_name  AS Grupo,
+                m.home_score  AS PlacarMandante,
+                m.away_score  AS PlacarVisitante,
+                m.status      AS Status
+            FROM dbo.matches m
+            LEFT JOIN dbo.teams    ht ON ht.id = m.home_team_id
+            LEFT JOIN dbo.teams    at ON at.id = m.away_team_id
+            LEFT JOIN dbo.stadiums s  ON s.id  = m.stadium_id
+            WHERE
+                (@Time IS NULL OR ht.name LIKE @TimeLike OR at.name LIKE @TimeLike
+                                 OR ht.code = @TimeUpper OR at.code = @TimeUpper)
+                AND (@Stage IS NULL OR m.stage = @Stage)
+                AND (@Estadio IS NULL OR s.name LIKE @EstadioLike OR s.city LIKE @EstadioLike)
+                AND (@Grupo IS NULL OR m.group_name = @Grupo)
+                AND (@Data IS NULL OR m.date = @Data)
+                AND (@ApenasComResultado = 0 OR m.home_score IS NOT NULL)
+            ORDER BY m.date, m.time;
+            """;
+
+        await using var connection = new SqlConnection(_connectionString);
+        var command = new CommandDefinition(
+            sql,
+            new
+            {
+                Time = time,
+                TimeLike = timeLike,
+                TimeUpper = timeUpper,
+                Stage = stage,
+                Estadio = estadio,
+                EstadioLike = estadioLike,
+                Grupo = grupo,
+                Data = dataFiltro,
+                ApenasComResultado = (apenasComResultado ?? false) ? 1 : 0
+            },
+            cancellationToken: cancellationToken);
+
+        var rows = await connection.QueryAsync<MatchResult>(command);
+        return rows.AsList();
+    }
+
+    public async Task<IReadOnlyList<StandingRow>> ConsultarClassificacaoAsync(
+        string grupo,
+        CancellationToken cancellationToken = default)
+    {
+        // Story 2.8 AC-2 — classificação CALCULADA por agregação (não existe tabela
+        // standings). UNION ALL expande cada partida disputada do grupo em duas linhas
+        // (perspectiva do mandante e do visitante), soma 3/1/0 pontos e agrega por time.
+        // 'Fase de Grupos' (com acento) vai por @Stage (parametrizado, nunca hardcoded).
+        // Se nenhum jogo foi disputado (home_score IS NULL em todos), retorna vazio.
+        const string sql = """
+            WITH PartidasDoGrupo AS (
+                SELECT
+                    m.home_team_id AS team_id,
+                    m.home_score   AS gols_marcados,
+                    m.away_score   AS gols_sofridos,
+                    CASE WHEN m.home_score > m.away_score THEN 3
+                         WHEN m.home_score = m.away_score THEN 1
+                         ELSE 0 END AS pontos
+                FROM dbo.matches m
+                WHERE m.group_name = @Grupo
+                  AND m.stage = @Stage
+                  AND m.home_score IS NOT NULL
+                  AND m.away_score IS NOT NULL
+                UNION ALL
+                SELECT
+                    m.away_team_id,
+                    m.away_score,
+                    m.home_score,
+                    CASE WHEN m.away_score > m.home_score THEN 3
+                         WHEN m.away_score = m.home_score THEN 1
+                         ELSE 0 END
+                FROM dbo.matches m
+                WHERE m.group_name = @Grupo
+                  AND m.stage = @Stage
+                  AND m.home_score IS NOT NULL
+                  AND m.away_score IS NOT NULL
+            )
+            SELECT
+                ROW_NUMBER() OVER (
+                    ORDER BY SUM(p.pontos) DESC,
+                             SUM(p.gols_marcados - p.gols_sofridos) DESC,
+                             SUM(p.gols_marcados) DESC)                AS Posicao,
+                t.name                                                AS Time,
+                COUNT(*)                                              AS Jogos,
+                SUM(CASE WHEN p.pontos = 3 THEN 1 ELSE 0 END)         AS Vitorias,
+                SUM(CASE WHEN p.pontos = 1 THEN 1 ELSE 0 END)         AS Empates,
+                SUM(CASE WHEN p.pontos = 0 THEN 1 ELSE 0 END)         AS Derrotas,
+                SUM(p.gols_marcados)                                  AS GolsPro,
+                SUM(p.gols_sofridos)                                  AS GolsContra,
+                SUM(p.gols_marcados - p.gols_sofridos)                AS Saldo,
+                SUM(p.pontos)                                         AS Pontos
+            FROM PartidasDoGrupo p
+            JOIN dbo.teams t ON t.id = p.team_id
+            GROUP BY t.id, t.name
+            ORDER BY Pontos DESC, Saldo DESC, GolsPro DESC;
+            """;
+
+        await using var connection = new SqlConnection(_connectionString);
+        var command = new CommandDefinition(
+            sql,
+            new { Grupo = grupo, Stage = StageFaseDeGrupos },
+            cancellationToken: cancellationToken);
+
+        var rows = await connection.QueryAsync<StandingRow>(command);
+        return rows.AsList();
+    }
+
+    public async Task<TeamResult> ConsultarTimeAsync(
+        string nome,
+        CancellationToken cancellationToken = default)
+    {
+        // Story 2.8 AC-3 — seleção por nome (LIKE) ou código exato (uppercase).
+        const string sql = """
+            SELECT TOP (1)
+                t.name          AS Nome,
+                t.code          AS Codigo,
+                t.group_name    AS Grupo,
+                t.confederation AS Confederacao,
+                t.fifa_ranking  AS RankingFifa,
+                t.flag          AS Bandeira
+            FROM dbo.teams t
+            WHERE t.name LIKE @NomeLike OR t.code = @NomeUpper
+            ORDER BY t.name;
+            """;
+
+        await using var connection = new SqlConnection(_connectionString);
+        var command = new CommandDefinition(
+            sql,
+            new { NomeLike = "%" + nome + "%", NomeUpper = nome.ToUpperInvariant() },
+            cancellationToken: cancellationToken);
+
+        var row = await connection.QuerySingleOrDefaultAsync<TeamRow>(command);
+
+        if (row is null)
+        {
+            return new TeamResult { Encontrado = false };
+        }
+
+        return new TeamResult
+        {
+            Encontrado = true,
+            Nome = row.Nome,
+            Codigo = row.Codigo,
+            Grupo = row.Grupo,
+            Confederacao = row.Confederacao,
+            RankingFifa = row.RankingFifa,
+            Bandeira = row.Bandeira
+        };
+    }
+
+    public async Task<StadiumResult> ConsultarEstadioAsync(
+        string nome,
+        CancellationToken cancellationToken = default)
+    {
+        // Story 2.8 AC-4 — estádio por nome OU cidade (LIKE).
+        const string sql = """
+            SELECT TOP (1)
+                s.name        AS Nome,
+                s.city        AS Cidade,
+                s.country     AS Pais,
+                s.capacity    AS Capacidade,
+                s.description AS Descricao
+            FROM dbo.stadiums s
+            WHERE s.name LIKE @NomeLike OR s.city LIKE @NomeLike
+            ORDER BY s.name;
+            """;
+
+        await using var connection = new SqlConnection(_connectionString);
+        var command = new CommandDefinition(
+            sql,
+            new { NomeLike = "%" + nome + "%" },
+            cancellationToken: cancellationToken);
+
+        var row = await connection.QuerySingleOrDefaultAsync<StadiumRow>(command);
+
+        if (row is null)
+        {
+            return new StadiumResult { Encontrado = false };
+        }
+
+        return new StadiumResult
+        {
+            Encontrado = true,
+            Nome = row.Nome,
+            Cidade = row.Cidade,
+            Pais = row.Pais,
+            Capacidade = row.Capacidade,
+            Descricao = row.Descricao
+        };
+    }
+
+    /// <summary>Valor real de <c>matches.stage</c> da fase de grupos (com acento e
+    /// espaços — migration 2026-05-08-group-stage-72.sql). Passado sempre por parâmetro
+    /// SQL, nunca concatenado.</summary>
+    internal const string StageFaseDeGrupos = "Fase de Grupos";
+
+    /// <summary>
+    /// Story 2.8 AC-1 — mapeia a "fase" em linguagem natural para o valor de
+    /// <c>matches.stage</c>. Adiciona apenas o caso "grupos" → 'Fase de Grupos' e
+    /// DELEGA o mata-mata a <see cref="MapRodadaToStage"/> (não duplica os mapeamentos
+    /// de oitavas/quartas/etc.). Retorna null quando não reconhece (sem filtro de fase).
+    /// </summary>
+    internal static string? MapFaseToStage(string? fase)
+    {
+        if (string.IsNullOrWhiteSpace(fase))
+        {
+            return null;
+        }
+
+        var f = fase.Trim().ToLowerInvariant();
+        if (f.Contains("grupo"))
+        {
+            return StageFaseDeGrupos;
+        }
+
+        return MapRodadaToStage(fase);
+    }
+
     /// <summary>
     /// Mapeia a rodada em linguagem natural para o valor de <c>matches.stage</c>
     /// (valores reais da migration knockout-matches: round_of_32, round_of_16,
@@ -250,4 +504,19 @@ public sealed class FifaQueryRepository : IFifaQueryRepository
         string? Partida,
         string? Categoria,
         DateTime? DataCompra);
+
+    private sealed record TeamRow(
+        string? Nome,
+        string? Codigo,
+        string? Grupo,
+        string? Confederacao,
+        int? RankingFifa,
+        string? Bandeira);
+
+    private sealed record StadiumRow(
+        string? Nome,
+        string? Cidade,
+        string? Pais,
+        int? Capacidade,
+        string? Descricao);
 }
