@@ -362,7 +362,7 @@ builder.Services.Configure<ForwardedHeadersOptions>(options =>
     options.ForwardLimit = 1;
 });
 
-const int ClientPermitLimit = 5;    // AC-5 original (rotas de cliente).
+const int ClientPermitLimit = 50;    // AC-5 original (rotas de cliente).
 const int AdminPermitLimit = 60;    // rotas /admin/* (Dashboard faz N chamadas).
 builder.Services.AddRateLimiter(options =>
 {
