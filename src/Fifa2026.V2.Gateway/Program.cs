@@ -37,6 +37,10 @@ const string EntraOidHeader = "X-Entra-OID";            // Story 2.3 AC-7 / ADE-
 // injetados, NUNCA logados (Inv 8 flag (c)). A Function os usa só no arm de INSERT (nato-CIAM).
 const string EntraEmailHeader = "X-Entra-Email";
 const string EntraNameHeader = "X-Entra-Name";
+// Story 3.5 fix (A-1 re-layer) — flag de verificação do email, derivado do claim
+// email_verified. Propagado SEMPRE junto do email; a MeFunction usa: LINK exige "true"
+// (anti-takeover), INSERT nato-CIAM não. Anti-spoof (Remove) igual aos outros headers.
+const string EntraEmailVerifiedHeader = "X-Entra-Email-Verified";
 // M-1 (code review 2026-07-01) — RouteId (appsettings.json → ReverseProxy:Routes) do ÚNICO
 // consumidor de email/name: o GET /api/v2/me. A injeção dessa PII é ESCOPADA a esta rota
 // (minimização de PII), diferente do X-Entra-OID (global — contrato existente da Story 2.3).
@@ -162,6 +166,7 @@ builder.Services
             transformContext.ProxyRequest.Headers.Remove(EntraOidHeader);
             transformContext.ProxyRequest.Headers.Remove(EntraEmailHeader);
             transformContext.ProxyRequest.Headers.Remove(EntraNameHeader);
+            transformContext.ProxyRequest.Headers.Remove(EntraEmailVerifiedHeader);
             // Emenda MEDIUM-4 (defesa em profundidade) — strip GLOBAL do X-Diploma-Key também:
             // o cliente NUNCA pode forjá-lo em NENHUMA rota. A rota flow-events-diploma reinjeta o
             // valor real logo depois (este transform roda antes, na ordem de registro). Não é
@@ -213,22 +218,25 @@ builder.Services
                 var user = transformContext.HttpContext.User;
                 if (user?.Identity?.IsAuthenticated == true)
                 {
-                    // A-1 (code review 2026-07-01) — o email do LINK vem SÓ do claim `email` e
-                    // SOMENTE quando `email_verified` for verdadeiro (aceita o bool true ou a
-                    // string "true"; bool.TryParse cobre ambos — o claim booleano do JWT chega
-                    // ao ClaimsPrincipal como string). Sem verificação → header OMITIDO → a
-                    // MeFunction cai em 422 (InsufficientClaims) = fail-closed. Isso fecha o
-                    // account-takeover: um oid que só REGISTROU o email de uma vítima (sem provar
-                    // posse) não dispara o arm de LINK por email. preferred_username foi removido
-                    // da cadeia (mutável; "must not be used for authorization").
+                    // A-1 (code review 2026-07-01) + Story 3.5 fix (re-layer) — o email é
+                    // propagado SEMPRE, junto de um header X-Entra-Email-Verified derivado do
+                    // claim `email_verified` (aceita o bool true ou a string "true"; bool.TryParse
+                    // cobre ambos — o claim booleano do JWT chega ao ClaimsPrincipal como string).
+                    // A decisão de segurança migra para a MeFunction (defense-in-depth): o arm de
+                    // LINK (vincular a uma conta v1 EXISTENTE) exige verified=true — fecha o
+                    // account-takeover em que um oid que só REGISTROU o email de uma vítima (sem
+                    // provar posse) sequestraria a conta. O arm de INSERT (nato-CIAM genuíno) NÃO
+                    // exige verified: não há conta a sequestrar, e colisão de email vira 409 na
+                    // UQ_users_email. preferred_username segue removido (mutável; "must not be
+                    // used for authorization").
                     var emailVerified = bool.TryParse(
                         user.FindFirst(EmailVerifiedClaim)?.Value, out var verified) && verified;
-                    var email = emailVerified
-                        ? user.FindFirst(EmailClaim)?.Value ?? user.FindFirst(EmailClaimUri)?.Value
-                        : null;
+                    var email = user.FindFirst(EmailClaim)?.Value ?? user.FindFirst(EmailClaimUri)?.Value;
                     if (!string.IsNullOrWhiteSpace(email))
                     {
                         transformContext.ProxyRequest.Headers.TryAddWithoutValidation(EntraEmailHeader, email);
+                        transformContext.ProxyRequest.Headers.TryAddWithoutValidation(
+                            EntraEmailVerifiedHeader, emailVerified ? "true" : "false");
                     }
 
                     // O NOME não é usado para autorização — só popula a coluna `name` NOT NULL no
