@@ -11,6 +11,10 @@ import { AuthProvider } from "@/contexts/AuthProvider";
 // escopado à área /admin. Instância MSAL separada da CIAM (ver src/lib/authAdmin.ts).
 import { AdminAuthProvider } from "@/contexts/AdminAuthProvider";
 import { MsalProvider } from "@azure/msal-react";
+// react-helmet-async EXIGE um <HelmetProvider> ancestral. Sem ele, qualquer página com
+// <Helmet> (Flow /flow, Diploma /diploma) crasha no mount: "Cannot read properties of
+// undefined (reading 'add')" — o contexto do helmet é undefined e o .add falha.
+import { HelmetProvider } from "react-helmet-async";
 import { msalInstance } from "@/lib/authV2";
 import Layout from "@/components/layout/Layout";
 import Index from "./pages/Index";
@@ -73,6 +77,7 @@ const PageLoader = () => (
 // Story 2.3 / F3 — MsalProvider envolve a app para o fluxo de identidade v2 (Entra).
 // Coexiste com AuthProvider (v1 bcrypt+JWT, intocado) — comparação didática v1 vs v2.
 const App = () => (
+  <HelmetProvider>
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
       <MsalProvider instance={msalInstance}>
@@ -126,6 +131,7 @@ const App = () => (
       </MsalProvider>
     </TooltipProvider>
   </QueryClientProvider>
+  </HelmetProvider>
 );
 
 export default App;
