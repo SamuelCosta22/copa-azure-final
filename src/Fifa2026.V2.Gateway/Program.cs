@@ -41,6 +41,13 @@ const string EntraNameHeader = "X-Entra-Name";
 // consumidor de email/name: o GET /api/v2/me. A injeção dessa PII é ESCOPADA a esta rota
 // (minimização de PII), diferente do X-Entra-OID (global — contrato existente da Story 2.3).
 const string MeRouteId = "me-get";
+// EPIC-004 Story 4.6 §Emenda MEDIUM-4 (ADE-009 v1.1) — RouteId e header da exceção
+// ROUTE-SCOPED do FlowEvents /api/flow/diploma-summary. O X-Diploma-Key reusa o MESMO valor
+// do Gateway:AdminSharedSecret sob header DISTINTO, injetado SÓ nesta rota (não por cluster —
+// o cluster flow-events segue fora do X-Gateway-Key). Prova de proveniência que o FQDN direto
+// do ca-flow não tem; somada ao Bearer (blanket RequireAuthorization) fecha o buraco MEDIUM-4.
+const string DiplomaRouteId = "flow-events-diploma";
+const string DiplomaKeyHeader = "X-Diploma-Key";
 
 // Claim names do Microsoft Identity Platform (AC-14 anti-hallucination — validados
 // contra docs oficiais "id-token-claims-reference" / "access-token-claims-reference").
@@ -155,6 +162,12 @@ builder.Services
             transformContext.ProxyRequest.Headers.Remove(EntraOidHeader);
             transformContext.ProxyRequest.Headers.Remove(EntraEmailHeader);
             transformContext.ProxyRequest.Headers.Remove(EntraNameHeader);
+            // Emenda MEDIUM-4 (defesa em profundidade) — strip GLOBAL do X-Diploma-Key também:
+            // o cliente NUNCA pode forjá-lo em NENHUMA rota. A rota flow-events-diploma reinjeta o
+            // valor real logo depois (este transform roda antes, na ordem de registro). Não é
+            // explorável hoje (só a rota diploma valida o header), mas fecha o gap por consistência
+            // com os headers de identidade acima.
+            transformContext.ProxyRequest.Headers.Remove(DiplomaKeyHeader);
 
             var user = transformContext.HttpContext.User;
             if (user?.Identity?.IsAuthenticated == true)
@@ -230,6 +243,40 @@ builder.Services
                 }
 
                 // PII (email/name): injetada, NUNCA logada (Inv 8 flag (c)).
+                return ValueTask.CompletedTask;
+            });
+        }
+
+        // -----------------------------------------------------------------------------
+        // EPIC-004 Story 4.6 §Emenda MEDIUM-4 (ADE-009 v1.1) — injeção ROUTE-SCOPED do
+        // X-Diploma-Key SÓ na rota flow-events-diploma (GET /flow-events/api/flow/diploma-summary).
+        //
+        // Escopamos por ROTA (molde do me-get acima), NÃO por cluster: o cluster flow-events
+        // continua FORA do X-Gateway-Key (o teste FlowEvents_Cluster_Does_NOT_Receive_GatewayKey
+        // segue verde — header e mecanismo distintos; a injeção é por rota, não por cluster).
+        // É a "prova de proveniência" que um chamador no FQDN direto do ca-flow não tem; combinada
+        // com o Bearer exigido pelo blanket RequireAuthorization (barra o anônimo-via-gateway),
+        // fecha o buraco do MEDIUM-4. Reusa o MESMO segredo (adminSharedSecret) sob header
+        // distinto — US$0 — com a MESMA semântica fail-closed/legado da Inv 1 (segredo vazio =
+        // injeção desligada = bypass legado no destino, preservando dev local/pré-provisionamento).
+        // -----------------------------------------------------------------------------
+        if (transformBuilderContext.Route?.RouteId is { } diplomaRouteId &&
+            string.Equals(diplomaRouteId, DiplomaRouteId, StringComparison.OrdinalIgnoreCase))
+        {
+            transformBuilderContext.AddRequestTransform(transformContext =>
+            {
+                // Anti-spoofing (igual ao X-Gateway-Key/X-Entra-OID): SEMPRE descarta qualquer
+                // X-Diploma-Key vindo do cliente antes de injetar o valor real.
+                transformContext.ProxyRequest.Headers.Remove(DiplomaKeyHeader);
+
+                // Só injeta quando o segredo está configurado (vazio = injeção desligada, o
+                // FlowEvents cai no bypass legado — paridade com a semântica da l.254).
+                if (!string.IsNullOrEmpty(adminSharedSecret))
+                {
+                    transformContext.ProxyRequest.Headers.TryAddWithoutValidation(
+                        DiplomaKeyHeader, adminSharedSecret);
+                }
+
                 return ValueTask.CompletedTask;
             });
         }

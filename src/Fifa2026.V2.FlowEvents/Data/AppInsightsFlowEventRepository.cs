@@ -54,6 +54,22 @@ public sealed class AppInsightsFlowEventRepository : IFlowEventRepository
         | limit topN
         """;
 
+    /// <summary>
+    /// Story 4.6 (Diploma vivo) — últimas N compras de UM aluno. Filtra
+    /// <c>customDimensions.UserId</c> (gravado pelo PurchaseEntryFunction em cada trace de
+    /// entrada) além do CorrelationId. É a MESMA query da lista recente, só escopada ao
+    /// usuário — nenhuma nova fonte de verdade (reúso do farol F6, AC-2).
+    /// </summary>
+    private const string ByUserQuery = """
+        traces
+        | where isnotempty(tostring(customDimensions.CorrelationId))
+        | where tostring(customDimensions.UserId) == userId
+        | summarize timestamp = min(timestamp), maxSeverity = max(severityLevel)
+            by correlationId = tostring(customDimensions.CorrelationId)
+        | order by timestamp desc
+        | limit topN
+        """;
+
     public async Task<IReadOnlyList<FlowEvent>> GetTimelineAsync(string correlationId, CancellationToken cancellationToken = default)
     {
         // Parametrização Kusto via "declare" prefix evita injeção (correlationId é input externo).
@@ -127,6 +143,56 @@ public sealed class AppInsightsFlowEventRepository : IFlowEventRepository
         }
 
         return purchases;
+    }
+
+    public async Task<IReadOnlyList<RecentPurchase>> GetPurchasesByUserAsync(string userId, int top, CancellationToken cancellationToken = default)
+    {
+        // userId v1 é sempre um inteiro positivo; sanitizamos para dígitos antes de interpolar
+        // no declare (defesa em profundidade — a parametrização Kusto já isola).
+        var query = $"declare query_parameters(topN:int = {top}, userId:string = '{SanitizeDigits(userId)}');\n{ByUserQuery}";
+
+        var response = await _client.QueryWorkspaceAsync(
+            _workspaceId,
+            query,
+            new QueryTimeRange(TimeSpan.FromDays(1)),
+            cancellationToken: cancellationToken);
+
+        var table = response.Value.Table;
+        var purchases = new List<RecentPurchase>(table.Rows.Count);
+
+        foreach (var row in table.Rows)
+        {
+            var correlationId = row.GetString("correlationId");
+            if (string.IsNullOrWhiteSpace(correlationId))
+            {
+                continue;
+            }
+
+            purchases.Add(new RecentPurchase
+            {
+                CorrelationId = correlationId,
+                Timestamp = row.GetDateTimeOffset("timestamp") ?? DateTimeOffset.UtcNow,
+                Status = TraceEventMapper.StatusFromSeverity((int)(row.GetInt32("maxSeverity") ?? 1))
+            });
+        }
+
+        _logger.LogInformation("Resumo do Diploma: {Count} compra(s) do aluno.", purchases.Count);
+        return purchases;
+    }
+
+    /// <summary>Mantém apenas dígitos [0-9] (o userId v1 é um inteiro positivo).</summary>
+    private static string SanitizeDigits(string value)
+    {
+        Span<char> buffer = stackalloc char[value.Length];
+        var n = 0;
+        foreach (var c in value)
+        {
+            if (char.IsAsciiDigit(c))
+            {
+                buffer[n++] = c;
+            }
+        }
+        return new string(buffer[..n]);
     }
 
     /// <summary>

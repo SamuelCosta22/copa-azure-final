@@ -64,6 +64,13 @@ interface ImportMetaEnv {
    * e /hubs/flow (SignalR). NUNCA hardcoded.
    */
   readonly VITE_FLOW_EVENTS_BASE_URL?: string;
+  /**
+   * Story 4.6 (Diploma vivo) — timestamp ISO do deploy, INJETADO NO BUILD pelo workflow
+   * (ex.: `date -u` no runner do GitHub Actions). É a "hora do deploy" infalsificável do
+   * Diploma (AC-3): nasce no CI, nunca no navegador do aluno. Ausente em builds locais →
+   * o Diploma degrada graciosamente (não fabrica um `Date.now()` client-side). NUNCA hardcoded.
+   */
+  readonly VITE_BUILD_TIME?: string;
 }
 
 interface ImportMeta {

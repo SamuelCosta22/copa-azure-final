@@ -38,6 +38,9 @@ const WorldCupHistory = lazy(() => import("./pages/WorldCupHistory"));
 const WorldCupDetail = lazy(() => import("./pages/WorldCupDetail"));
 // Story 2.6 / F6 — Flow Visualizer (rota /flow). Lazy: bundle separado (framer-motion + signalr).
 const Flow = lazy(() => import("./pages/Flow"));
+// Story 4.6 / Grande Final — Diploma vivo (rota /diploma). Telemetria real do aluno
+// (mesma fonte do F6). Rota NOVA e aditiva: nenhum fluxo existente é alterado (AC-9).
+const Diploma = lazy(() => import("./pages/Diploma"));
 
 // Admin pages: bundle separado, só carrega para admins.
 const AdminLayout = lazy(() => import("./pages/admin/AdminLayout"));
@@ -111,6 +114,8 @@ const App = () => (
                 <Route path="/ticket/verify/:id" element={<Layout><TicketVerify /></Layout>} />
                 {/* Story 2.6 / F6 — Flow Visualizer em tempo real (Gateway YARP → SQL). */}
                 <Route path="/flow" element={<Layout><Flow /></Layout>} />
+                {/* Story 4.6 / Grande Final — Diploma vivo (telemetria real do aluno). */}
+                <Route path="/diploma" element={<Layout><Diploma /></Layout>} />
                 <Route path="/profile" element={<Layout><Profile /></Layout>} />
                 <Route path="*" element={<Layout><NotFound /></Layout>} />
               </Routes>

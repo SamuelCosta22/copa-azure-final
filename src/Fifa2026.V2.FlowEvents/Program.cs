@@ -59,6 +59,25 @@ builder.Services.AddApplicationInsightsTelemetry();
 
 var app = builder.Build();
 
+// Emenda MEDIUM-4 (ADE-009 v1.1) — SINAL de configuração esquecível. Em produção (não-Development),
+// um `DiplomaSharedSecret` VAZIO significa que o `/api/flow/diploma-summary` cai no BYPASS legado
+// (anônimo) — reabrindo o MEDIUM-4 SEM nenhum sinal (via gateway tudo aparenta ok). O owner
+// rejeitou aceitar esse débito → aqui emitimos um WARNING alto no startup (visível nos logs do
+// Container App). Fail-LOUD, não fail-closed: NÃO derrubamos o serviço (recent/timeline/SignalR
+// seguem, e o pré-provisionamento pode ainda não ter armado o segredo). Em Development o vazio é
+// intencional (dev local) — nenhum aviso. Não expomos isso no /health público (ingress externo)
+// para não sinalizar a um atacante que o endpoint está aberto — o sinal é operator-facing (log).
+if (!app.Environment.IsDevelopment()
+    && string.IsNullOrEmpty(app.Configuration["DiplomaSharedSecret"]))
+{
+    app.Logger.LogWarning(
+        "DiplomaSharedSecret VAZIO em ambiente '{Environment}': GET /api/flow/diploma-summary está "
+        + "ANÔNIMO (bypass legado — débito MEDIUM-4 reaberto). Configure o App Setting "
+        + "DiplomaSharedSecret no ca-flow como Key Vault reference ao gateway-admin-shared-secret "
+        + "(guia final-portal-guide.md, Fase 7.4) para armar a validação X-Diploma-Key.",
+        app.Environment.EnvironmentName);
+}
+
 app.UseCors(CorsPolicy);
 
 // Health endpoint (paridade com gateway/McpServer — smoke test / Container App probe).

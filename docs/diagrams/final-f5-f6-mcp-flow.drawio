@@ -1,0 +1,218 @@
+<mxfile host="app.diagrams.net" type="device" agent="aiox-analyst-atlas">
+  <diagram name="Final F5-F6 - MCP + Flow Visualizer (pos-ADE-008)" id="final-f5-f6-mcp-flow">
+    <mxGraphModel dx="1422" dy="820" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1900" pageHeight="1060" background="#FFFFFF" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- ============ TITULO ============ -->
+        <mxCell id="title" value="🏆 A Grande Final (F5/F6) — Chatbot MCP read-only + Flow Visualizer · arquitetura pós-ADE-008 (SEM orquestração externa)" style="text;html=1;fontSize=20;fontStyle=1;align=left;verticalAlign=middle;fontColor=#B58A00;" vertex="1" parent="1">
+          <mxGeometry x="48" y="20" width="1500" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="F5 → McpServer (7 sentidos read-only, ingress INTERNO) + chatbot Gemini com grounding/RAG via ferramentas  ·  F6 → FlowEvents (SignalR + Managed Identity) lê traces por correlationId  ·  pós-compra INLINE na Function Consumer (n8n removido) · ADE-008 + ADE-009 (X-Gateway-Key) · ADE-004/ADE-007 preservadas" style="text;html=1;fontSize=12;align=left;verticalAlign=middle;fontColor=#605E5C;" vertex="1" parent="1">
+          <mxGeometry x="48" y="50" width="1760" height="20" as="geometry" />
+        </mxCell>
+
+        <!-- ============ BROWSER SPA ============ -->
+        <mxCell id="browser" value="Browser SPA (Vite / React)&#10;Chatbot (gemini.ts)&#10;rota /flow (FlowDiagram · 5 nós)" style="sketch=0;html=1;aspect=fixed;image;verticalLabelPosition=bottom;verticalAlign=top;align=center;fontSize=10;image=img/lib/azure2/general/Browser.svg;" vertex="1" parent="1">
+          <mxGeometry x="70" y="470" width="60" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="browserNote" value="chave Gemini NUNCA no bundle&#10;só conhece a URL do proxy (= gateway)" style="rounded=1;arcSize=8;html=1;fillColor=#FDECEA;strokeColor=#C0392B;fontColor=#922B21;fontSize=9;align=left;verticalAlign=middle;spacingLeft=8;whiteSpace=wrap;" vertex="1" parent="1">
+          <mxGeometry x="40" y="560" width="230" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- ============ GATEWAY YARP (guardião — NÓ ZERO) ============ -->
+        <mxCell id="gwContainer" value="Container App · ca-gateway-&lt;sufixo&gt;  ·  ASP.NET Core + YARP (.NET 8)  —  O GUARDIÃO ÚNICO / NÓ ZERO" style="rounded=1;arcSize=4;html=1;fillColor=#F3F9FD;strokeColor=#8661C5;strokeWidth=2.5;fontColor=#5C2E91;fontSize=12;fontStyle=1;verticalAlign=top;spacingTop=8;align=center;whiteSpace=wrap;" vertex="1" parent="1">
+          <mxGeometry x="330" y="110" width="430" height="840" as="geometry" />
+        </mxCell>
+        <mxCell id="gwIcon" value="" style="sketch=0;html=1;aspect=fixed;image;verticalLabelPosition=bottom;verticalAlign=top;align=center;fontSize=9;image=img/lib/azure2/app_services/App_Services.svg;" vertex="1" parent="1">
+          <mxGeometry x="705" y="120" width="40" height="40" as="geometry" />
+        </mxCell>
+
+        <mxCell id="pCors" value="CORS origin-restrito + rate-limit + roteia /mcp · /llm · /purchase · /flow-events" style="rounded=1;arcSize=10;html=1;fillColor=#EFF6FC;strokeColor=#0078D4;fontColor=#0078D4;fontSize=10;align=left;verticalAlign=middle;spacingLeft=10;whiteSpace=wrap;" vertex="1" parent="1">
+          <mxGeometry x="352" y="176" width="386" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="pJwt" value="AddJwtBearer dual-issuer (discovery): CIAM cliente + workforce admin — reusado das Quartas (ADE-007)" style="rounded=1;arcSize=10;html=1;fillColor=#E6F7F4;strokeColor=#0E8A7D;fontColor=#0E8A7D;fontSize=10;align=left;verticalAlign=middle;spacingLeft=10;whiteSpace=wrap;" vertex="1" parent="1">
+          <mxGeometry x="352" y="224" width="386" height="44" as="geometry" />
+        </mxCell>
+        <mxCell id="pOid" value="extrai claim oid → injeta X-Entra-OID (anti-spoof: strip do header de entrada) · injeta X-Correlation-ID (transform global = nó zero)" style="rounded=1;arcSize=10;html=1;fillColor=#FFF7E6;strokeColor=#B58A00;fontColor=#8A6D00;fontSize=10;align=left;verticalAlign=middle;spacingLeft=10;whiteSpace=wrap;" vertex="1" parent="1">
+          <mxGeometry x="352" y="276" width="386" height="48" as="geometry" />
+        </mxCell>
+
+        <!-- hardening box -->
+        <mxCell id="hardBox" value="" style="rounded=1;arcSize=4;html=1;fillColor=none;strokeColor=#C0392B;strokeWidth=1.5;dashed=1;dashPattern=6 4;" vertex="1" parent="1">
+          <mxGeometry x="352" y="336" width="386" height="96" as="geometry" />
+        </mxCell>
+        <mxCell id="hardLbl" value="★ NOVO na FINAL — hardening (ADE-009): X-Gateway-Key" style="text;html=1;fontSize=10;fontStyle=1;fontColor=#922B21;align=left;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="360" y="340" width="370" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="pKey" value="injeta X-Gateway-Key (timing-safe) nos clusters CONFIÁVEIS: backend-v1 · functions-f1 · mcp-server. Um curl direto no McpServer forjando X-Entra-OID = 401 (falta o segredo)." style="rounded=1;arcSize=10;html=1;fillColor=#FDECEA;strokeColor=#C0392B;fontColor=#922B21;fontSize=10;align=left;verticalAlign=middle;spacingLeft=10;whiteSpace=wrap;" vertex="1" parent="1">
+          <mxGeometry x="360" y="362" width="370" height="62" as="geometry" />
+        </mxCell>
+
+        <mxCell id="pCache" value="cache de borda 30s PÓS-autenticação (hardening 4.4) · POST /mcp e /llm NÃO cacheados" style="rounded=1;arcSize=10;html=1;fillColor=#EFF6FC;strokeColor=#0078D4;fontColor=#0078D4;fontSize=10;align=left;verticalAlign=middle;spacingLeft=10;whiteSpace=wrap;" vertex="1" parent="1">
+          <mxGeometry x="352" y="444" width="386" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="pProxy" value="MapReverseProxy → clusters mcp-server · functions-f1 · flow-events" style="rounded=1;arcSize=10;html=1;fillColor=#F3F2F1;strokeColor=#8661C5;fontColor=#5C2E91;fontSize=10;align=left;verticalAlign=middle;spacingLeft=10;whiteSpace=wrap;" vertex="1" parent="1">
+          <mxGeometry x="352" y="496" width="386" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="gwNodeZero" value="NÓ 0 do Flow Visualizer — a compra também entra aqui" style="rounded=1;arcSize=40;html=1;fillColor=#8661C5;strokeColor=#8661C5;fontColor=#FFFFFF;fontSize=10;fontStyle=1;align=center;verticalAlign=middle;whiteSpace=wrap;" vertex="1" parent="1">
+          <mxGeometry x="410" y="560" width="270" height="26" as="geometry" />
+        </mxCell>
+
+        <!-- ============ BANDA F5 — VOZ (RAG via MCP) ============ -->
+        <mxCell id="bandF5" value="" style="rounded=1;arcSize=2;html=1;fillColor=#E6F7F4;strokeColor=#0E8A7D;strokeWidth=2;dashed=1;dashPattern=8 5;opacity=30;" vertex="1" parent="1">
+          <mxGeometry x="800" y="110" width="1040" height="290" as="geometry" />
+        </mxCell>
+        <mxCell id="bandF5Lbl" value="F5 · VOZ — chatbot com grounding/RAG via ferramentas MCP (SÓ SENTIDOS, read-only)" style="rounded=1;arcSize=20;html=1;fillColor=#0E8A7D;strokeColor=#0E8A7D;fontColor=#FFFFFF;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="812" y="120" width="560" height="22" as="geometry" />
+        </mxCell>
+
+        <mxCell id="mcp" value="McpServer (Container App)&#10;ca-mcp-&lt;sufixo&gt; · ingress INTERNO&#10;endpoint /mcp (JSON-RPC · SDK oficial)" style="sketch=0;html=1;aspect=fixed;image;verticalLabelPosition=bottom;verticalAlign=top;align=center;fontSize=10;image=img/lib/azure2/app_services/App_Services.svg;" vertex="1" parent="1">
+          <mxGeometry x="880" y="180" width="50" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="mcpTools" value="7 tools read-only [McpServerTool(ReadOnly=true)] → IFifaQueryRepository → SQL SELECT parametrizado (Dapper):&#10;consultar_disponibilidade · verificar_ingresso · consultar_bracket · consultar_partidas · consultar_classificacao · consultar_time · consultar_estadio&#10;ZERO tool de escrita — a regra de ouro vale POR CONSTRUÇÃO" style="rounded=1;arcSize=6;html=1;fillColor=#E6F7F4;strokeColor=#0E8A7D;fontColor=#0E8A7D;fontSize=10;align=left;verticalAlign=middle;spacingLeft=10;whiteSpace=wrap;" vertex="1" parent="1">
+          <mxGeometry x="960" y="164" width="430" height="86" as="geometry" />
+        </mxCell>
+
+        <!-- LLM proxy + Gemini -->
+        <mxCell id="llmProxy" value="proxy /llm/{provider}/{*path}&#10;injeta GEMINI_API_KEY server-side" style="rounded=1;arcSize=8;html=1;fillColor=#FDECEA;strokeColor=#C0392B;fontColor=#922B21;fontSize=10;align=left;verticalAlign=middle;spacingLeft=10;whiteSpace=wrap;" vertex="1" parent="1">
+          <mxGeometry x="880" y="290" width="280" height="46" as="geometry" />
+        </mxCell>
+        <mxCell id="gemini" value="Google Gemini API&#10;(gemini-2.5-flash)&#10;function calling AUTO" style="rounded=1;arcSize=10;html=1;fillColor=#FEF7E0;strokeColor=#EA9A00;fontColor=#8A6D00;fontSize=10;align=center;verticalAlign=middle;whiteSpace=wrap;" vertex="1" parent="1">
+          <mxGeometry x="1210" y="286" width="170" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="ragNote" value="RAG por tool-use: o Gemini raciocina e ESCOLHE a tool; o McpServer RECUPERA o fato real do SQL. Não é vector store/embeddings — é grounding via function-calling/MCP." style="rounded=1;arcSize=6;html=1;fillColor=#FFFFFF;strokeColor=#0E8A7D;fontColor=#0E8A7D;fontSize=9;fontStyle=2;align=left;verticalAlign=middle;spacingLeft=8;whiteSpace=wrap;" vertex="1" parent="1">
+          <mxGeometry x="1410" y="164" width="410" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- SQL (read for tools) -->
+        <mxCell id="sqlRead" value="Azure SQL&#10;FIFA2026Tickets (SELECT)" style="sketch=0;html=1;aspect=fixed;image;verticalLabelPosition=bottom;verticalAlign=top;align=center;fontSize=10;image=img/lib/azure2/databases/SQL_Database.svg;" vertex="1" parent="1">
+          <mxGeometry x="1470" y="286" width="50" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- ============ BANDA COMPRA (5 NÓS) ============ -->
+        <mxCell id="bandBuy" value="" style="rounded=1;arcSize=2;html=1;fillColor=#EFF6FC;strokeColor=#0078D4;strokeWidth=2;dashed=1;dashPattern=8 5;opacity=30;" vertex="1" parent="1">
+          <mxGeometry x="800" y="420" width="1040" height="230" as="geometry" />
+        </mxCell>
+        <mxCell id="bandBuyLbl" value="COMPRA v2 (assíncrona) — os 5 NÓS que o Flow Visualizer acende (Gateway=0)" style="rounded=1;arcSize=20;html=1;fillColor=#0078D4;strokeColor=#0078D4;fontColor=#FFFFFF;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="812" y="430" width="520" height="22" as="geometry" />
+        </mxCell>
+
+        <mxCell id="fnEntry" value="① Function Entry&#10;PurchaseEntryFunction&#10;valida + publica" style="sketch=0;html=1;aspect=fixed;image;verticalLabelPosition=bottom;verticalAlign=top;align=center;fontSize=10;image=img/lib/azure2/compute/Function_Apps.svg;" vertex="1" parent="1">
+          <mxGeometry x="850" y="486" width="50" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="sbus" value="② Service Bus&#10;fila tickets-purchase" style="sketch=0;html=1;aspect=fixed;image;verticalLabelPosition=bottom;verticalAlign=top;align=center;fontSize=10;image=img/lib/azure2/integration/Service_Bus.svg;" vertex="1" parent="1">
+          <mxGeometry x="1080" y="486" width="50" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="fnConsumer" value="③ Function Consumer&#10;PurchaseConsumerFunction&#10;grava (idempotente)" style="sketch=0;html=1;aspect=fixed;image;verticalLabelPosition=bottom;verticalAlign=top;align=center;fontSize=10;image=img/lib/azure2/compute/Function_Apps.svg;" vertex="1" parent="1">
+          <mxGeometry x="1310" y="486" width="50" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="sqlBuy" value="④ Azure SQL&#10;purchases.correlation_id" style="sketch=0;html=1;aspect=fixed;image;verticalLabelPosition=bottom;verticalAlign=top;align=center;fontSize=10;image=img/lib/azure2/databases/SQL_Database.svg;" vertex="1" parent="1">
+          <mxGeometry x="1545" y="486" width="50" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="inlineNote" value="★ pós-compra INLINE (dentro do nó ③): notificação = log estruturado correlacionado — SEM nó próprio, SEM orquestração externa. É a Function que orquestra o pós-compra (ADE-008 Inv 3/5). n8n e PostgreSQL: REMOVIDOS." style="rounded=1;arcSize=6;html=1;fillColor=#FFF7E6;strokeColor=#B58A00;fontColor=#8A6D00;fontSize=10;align=left;verticalAlign=middle;spacingLeft=10;whiteSpace=wrap;" vertex="1" parent="1">
+          <mxGeometry x="1250" y="560" width="570" height="66" as="geometry" />
+        </mxCell>
+
+        <!-- ============ BANDA F6 — VISÃO (observabilidade) ============ -->
+        <mxCell id="bandF6" value="" style="rounded=1;arcSize=2;html=1;fillColor=#F5EEFB;strokeColor=#8661C5;strokeWidth=2;dashed=1;dashPattern=8 5;opacity=30;" vertex="1" parent="1">
+          <mxGeometry x="800" y="670" width="1040" height="280" as="geometry" />
+        </mxCell>
+        <mxCell id="bandF6Lbl" value="F6 · VISÃO — observabilidade distribuída (trace-driven): FlowEvents lê os traces e empurra por SignalR" style="rounded=1;arcSize=20;html=1;fillColor=#8661C5;strokeColor=#8661C5;fontColor=#FFFFFF;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="812" y="680" width="660" height="22" as="geometry" />
+        </mxCell>
+
+        <mxCell id="appi" value="Application Insights / Log Analytics&#10;traces com customDimensions.CorrelationId" style="sketch=0;html=1;aspect=fixed;image;verticalLabelPosition=bottom;verticalAlign=top;align=center;fontSize=10;image=img/lib/azure2/devops/Application_Insights.svg;" vertex="1" parent="1">
+          <mxGeometry x="850" y="740" width="50" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="flow" value="FlowEvents (Container App)&#10;ca-flow-&lt;sufixo&gt; · ingress externo (WebSocket)&#10;AppInsightsFlowEventRepository (Kusto)&#10;TraceEventMapper.Classify → 5 nós" style="sketch=0;html=1;aspect=fixed;image;verticalLabelPosition=bottom;verticalAlign=top;align=center;fontSize=10;image=img/lib/azure2/app_services/App_Services.svg;" vertex="1" parent="1">
+          <mxGeometry x="1130" y="740" width="50" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="mi" value="Managed Identity (SystemAssigned)&#10;role Log Analytics Reader&#10;→ LogsQueryClient consulta o Kusto&#10;(sem role = 403, nós não acendem)" style="rounded=1;arcSize=8;html=1;fillColor=#EFF6FC;strokeColor=#0078D4;fontColor=#0078D4;fontSize=9;align=left;verticalAlign=middle;spacingLeft=8;whiteSpace=wrap;" vertex="1" parent="1">
+          <mxGeometry x="950" y="812" width="300" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="signalr" value="Azure SignalR&#10;(Free_F1 · Service Mode DEFAULT)&#10;FlowHub via AddAzureSignalR&#10;push por grupo correlation-&lt;id&gt;" style="rounded=1;arcSize=10;html=1;fillColor=#F5EEFB;strokeColor=#8661C5;fontColor=#5C2E91;fontSize=10;align=center;verticalAlign=middle;whiteSpace=wrap;" vertex="1" parent="1">
+          <mxGeometry x="1420" y="736" width="180" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- ============ EDGES ============ -->
+        <!-- browser → gateway (chat) -->
+        <mxCell id="eChat" value="POST /mcp · /llm&#10;Bearer CIAM" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=0;endArrow=block;flowAnimation=1;strokeColor=#0E8A7D;strokeWidth=2.5;fontColor=#0E8A7D;fontSize=10;fontStyle=1;labelBackgroundColor=#FFFFFF;exitX=1;exitY=0.3;exitDx=0;exitDy=0;entryX=0;entryY=0.28;entryDx=0;entryDy=0;" edge="1" parent="1" source="browser" target="gwContainer">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <!-- browser → gateway (flow ws) -->
+        <mxCell id="eFlowWs" value="/flow-events (WebSocket)&#10;+ compra v2 (POST /purchase)" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=0;endArrow=block;flowAnimation=1;strokeColor=#8661C5;strokeWidth=2.5;fontColor=#5C2E91;fontSize=10;fontStyle=1;labelBackgroundColor=#FFFFFF;exitX=1;exitY=0.7;exitDx=0;exitDy=0;entryX=0;entryY=0.72;entryDx=0;entryDy=0;" edge="1" parent="1" source="browser" target="gwContainer">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- gateway → mcp -->
+        <mxCell id="eMcp" value="proxy + X-Entra-OID + X-Gateway-Key" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=0;endArrow=block;flowAnimation=1;strokeColor=#0E8A7D;strokeWidth=2;fontColor=#0E8A7D;fontSize=10;labelBackgroundColor=#FFFFFF;exitX=1;exitY=0.24;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="pProxy" target="mcp">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <!-- mcp → sql read -->
+        <mxCell id="eSelect" value="SELECT" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=0;endArrow=block;flowAnimation=1;strokeColor=#0E8A7D;strokeWidth=2;fontColor=#0E8A7D;fontSize=10;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="mcpTools" target="sqlRead">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <!-- mcp/proxy → gemini -->
+        <mxCell id="eGemini" value="encaminha (key server-side)" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=0;endArrow=block;dashed=1;strokeColor=#EA9A00;strokeWidth=2;fontColor=#8A6D00;fontSize=10;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="llmProxy" target="gemini">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- gateway → entry (compra) -->
+        <mxCell id="eEntry" value="proxy /purchase + X-Entra-OID + X-Correlation-ID" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=0;endArrow=block;flowAnimation=1;strokeColor=#0078D4;strokeWidth=2.5;fontColor=#0078D4;fontSize=10;labelBackgroundColor=#FFFFFF;exitX=1;exitY=0.53;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="pProxy" target="fnEntry">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="eSb" value="publica" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=0;endArrow=block;flowAnimation=1;strokeColor=#0078D4;strokeWidth=2;fontColor=#0078D4;fontSize=10;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="fnEntry" target="sbus">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="eCons" value="entrega" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=0;endArrow=block;flowAnimation=1;strokeColor=#0078D4;strokeWidth=2;fontColor=#0078D4;fontSize=10;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="sbus" target="fnConsumer">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="eInsert" value="INSERT (idempotente)" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=0;endArrow=block;flowAnimation=1;strokeColor=#0078D4;strokeWidth=2;fontColor=#0078D4;fontSize=10;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="fnConsumer" target="sqlBuy">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- traces → app insights -->
+        <mxCell id="eTraceEntry" value="trace correlationId" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=0;endArrow=open;dashed=1;strokeColor=#8661C5;strokeWidth=1.5;fontColor=#5C2E91;fontSize=9;labelBackgroundColor=#FFFFFF;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.2;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="fnEntry" target="appi">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="eTraceCons" value="trace (grava + notificação INLINE)" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=0;endArrow=open;dashed=1;strokeColor=#8661C5;strokeWidth=1.5;fontColor=#5C2E91;fontSize=9;labelBackgroundColor=#FFFFFF;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.8;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="fnConsumer" target="appi">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <!-- flow → app insights (Kusto via MI) -->
+        <mxCell id="eKusto" value="Kusto por correlationId (via Managed Identity)" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=0;endArrow=block;flowAnimation=1;strokeColor=#0078D4;strokeWidth=2;fontColor=#0078D4;fontSize=10;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="flow" target="appi">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <!-- flow → signalr -->
+        <mxCell id="eSignalr" value="push FlowEvent" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=0;endArrow=block;flowAnimation=1;strokeColor=#8661C5;strokeWidth=2;fontColor=#5C2E91;fontSize=10;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="flow" target="signalr">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <!-- signalr → browser (ws, back to /flow) -->
+        <mxCell id="eSrToBrowser" value="SignalR (WebSocket) → rota /flow acende os 5 nós" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=0;endArrow=block;flowAnimation=1;dashed=1;strokeColor=#8661C5;strokeWidth=2;fontColor=#5C2E91;fontSize=10;labelBackgroundColor=#FFFFFF;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;" edge="1" parent="1" source="signalr" target="browser">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="1510" y="990" /><mxPoint x="100" y="990" /></Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- ============ LEGENDA / NOTAS ============ -->
+        <mxCell id="noteRemoved" value="REMOVIDO na Final (ADE-008): Container App do n8n · PostgreSQL gerenciado · nó N8N_WEBHOOK_TRIGGERED (6 → 5 nós) · tool de escrita criar_alerta_ingresso. A notificação pós-compra é INLINE no Consumer." style="rounded=1;arcSize=6;html=1;fillColor=#FDECEA;strokeColor=#C0392B;fontColor=#922B21;fontSize=11;align=left;verticalAlign=middle;spacingLeft=12;spacingRight=12;whiteSpace=wrap;" vertex="1" parent="1">
+          <mxGeometry x="48" y="700" width="740" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="notePreserved" value="PRESERVADO (retro-compat dura): gateway YARP guardião (ADE-004) · identidade CIAM/admin dual-issuer (ADE-007) · idempotência + correlationId (ADE-000) · a compra das Quartas é a MESMA. A Final só ADICIONA voz (F5) e visão (F6)." style="rounded=1;arcSize=6;html=1;fillColor=#E6F7F4;strokeColor=#0E8A7D;fontColor=#0E8A7D;fontSize=11;align=left;verticalAlign=middle;spacingLeft=12;spacingRight=12;whiteSpace=wrap;" vertex="1" parent="1">
+          <mxGeometry x="48" y="770" width="740" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="noteProd" value="PRODUÇÃO (próximo passo / EPIC-004 — NÃO cabeado neste lab): segredos hoje são App Settings/secretref; a postura-alvo é Key Vault references resolvidas por user-assigned Managed Identity + SQL via Managed Identity. Registrado como débito (docs/security/final-security-debt.md)." style="rounded=1;arcSize=6;html=1;fillColor=#FFFFFF;strokeColor=#8A8886;fontColor=#605E5C;fontSize=10;fontStyle=2;align=left;verticalAlign=middle;spacingLeft=12;spacingRight=12;whiteSpace=wrap;" vertex="1" parent="1">
+          <mxGeometry x="48" y="836" width="740" height="56" as="geometry" />
+        </mxCell>
+
+        <mxCell id="legendStencil" value="Nota de stencils: Azure2 não tem ícone dedicado de Container Apps, Azure SignalR nem Managed Identity. Fallbacks: App_Services.svg p/ os Container Apps (gateway/McpServer/FlowEvents); caixas rotuladas p/ SignalR e Managed Identity; rótulos textuais nomeiam o produto correto. Gemini e Key Vault não têm stencil Azure2 (Gemini é externo à Azure; KV é direção, fora do lab)." style="text;html=1;fontSize=9;fontStyle=2;align=left;verticalAlign=middle;fontColor=#8A8886;" vertex="1" parent="1">
+          <mxGeometry x="48" y="900" width="1760" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="foot" value="TFTEC Cloud · Copa do Mundo Azure 2026 — A Grande Final (F5/F6) · Story 3.6 · fonte: ADE-008 (re-arquitetura sem n8n) + ADE-009 (X-Gateway-Key) + guia final-portal-guide.md + código verificado (FifaTicketTools.cs, FlowEventType.cs, gemini.ts)" style="text;html=1;fontSize=11;fontColor=#605E5C;align=left;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="48" y="932" width="1760" height="22" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

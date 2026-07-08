@@ -1,0 +1,322 @@
+<mxfile host="app.diagrams.net" type="device" agent="aiox-analyst-atlas">
+  <diagram name="Final - Topologia de Seguranca (malha fechada) - Stories 4.1/4.2 + ADE-009/010" id="final-topologia-seguranca">
+    <mxGraphModel dx="1422" dy="820" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2100" pageHeight="1420" background="#FFFFFF" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- ============ TITULO ============ -->
+        <mxCell id="title" value="🔒 A Grande Final — Topologia de Segurança (malha fechada) · zero-trust &quot;da porta pra dentro&quot; · Managed Identity + Key Vault + X-Gateway-Key" style="text;html=1;fontSize=20;fontStyle=1;align=left;verticalAlign=middle;fontColor=#5C2E91;" vertex="1" parent="1">
+          <mxGeometry x="40" y="16" width="1700" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="O que as Stories 4.1 (MI+Key Vault, Done) e 4.2 (X-Gateway-Key + remover AllowAllAzureServices + SQL PE, Done) construíram · direção ADE-009 (rede/secrets/identidade de serviço) + ADE-010 (MI+KV hands-on Portal) · perímetro ADE-004/007 preservado. Piso T1 (US$0) SEMPRE; rede fechada T2 = showcase/opcional; T3 = nomeado, NÃO construído (fora deste diagrama)." style="text;html=1;fontSize=12;align=left;verticalAlign=middle;fontColor=#605E5C;" vertex="1" parent="1">
+          <mxGeometry x="40" y="48" width="1980" height="20" as="geometry" />
+        </mxCell>
+
+        <!-- ============ ZONA PUBLICA ============ -->
+        <mxCell id="publicZone" value="INTERNET / ZONA PÚBLICA" style="rounded=1;arcSize=2;html=1;fillColor=#EFF6FC;strokeColor=#0078D4;strokeWidth=1.5;dashed=1;dashPattern=8 5;fontColor=#0078D4;fontSize=11;fontStyle=1;verticalAlign=top;spacingTop=6;align=center;opacity=60;" vertex="1" parent="1">
+          <mxGeometry x="40" y="120" width="230" height="620" as="geometry" />
+        </mxCell>
+        <mxCell id="browser" value="Browser / SPA (Vite + React)&#10;Diploma vivo · Chatbot · rota /flow" style="sketch=0;html=1;aspect=fixed;image;verticalLabelPosition=bottom;verticalAlign=top;align=center;fontSize=10;image=img/lib/azure2/general/Browser.svg;" vertex="1" parent="1">
+          <mxGeometry x="120" y="300" width="60" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="frontend" value="Frontend Web App (App Service)&#10;serve o SPA compilado" style="sketch=0;html=1;aspect=fixed;image;verticalLabelPosition=bottom;verticalAlign=top;align=center;fontSize=10;image=img/lib/azure2/app_services/App_Services.svg;" vertex="1" parent="1">
+          <mxGeometry x="125" y="500" width="50" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="browserNote" value="Nenhum segredo no bundle: chave Gemini, X-Gateway-Key e conn strings NUNCA chegam ao cliente (só a URL do gateway). Token CIAM/admin no header Authorization." style="rounded=1;arcSize=8;html=1;fillColor=#FDECEA;strokeColor=#C0392B;fontColor=#922B21;fontSize=9;align=left;verticalAlign=middle;spacingLeft=8;spacingRight=8;whiteSpace=wrap;" vertex="1" parent="1">
+          <mxGeometry x="55" y="600" width="200" height="90" as="geometry" />
+        </mxCell>
+
+        <!-- ============ VNET (T2 SHOWCASE / OPCIONAL) ============ -->
+        <mxCell id="vnetBoundary" value="" style="rounded=1;arcSize=2;html=1;fillColor=#F5F5F5;strokeColor=#8A8886;strokeWidth=2;dashed=1;dashPattern=10 6;opacity=50;" vertex="1" parent="1">
+          <mxGeometry x="310" y="120" width="1010" height="700" as="geometry" />
+        </mxCell>
+        <mxCell id="vnetLbl" value="⚠ T2 — SHOWCASE / OPCIONAL (~US$7/mês, derrubar no mesmo dia): VNet + CAE VNet-integrado + Private DNS. Pré-provisionado pelo INSTRUTOR fora da aula (Story 4.2 AC-11; ADE-009 Inv 3). ONDE A REDE NÃO FECHA (T1, padrão), o X-Gateway-Key (vermelho) é o PISO — a confiança de app-layer SUBSTITUI o isolamento de rede." style="rounded=1;arcSize=8;html=1;fillColor=#FFFFFF;strokeColor=#8A8886;fontColor=#605E5C;fontSize=10;fontStyle=1;align=left;verticalAlign=middle;spacingLeft=10;spacingRight=10;whiteSpace=wrap;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="326" y="130" width="978" height="52" as="geometry" />
+        </mxCell>
+
+        <!-- ============ CAE (Container Apps Environment) ============ -->
+        <mxCell id="caeBoundary" value="" style="rounded=1;arcSize=3;html=1;fillColor=#F3F0FA;strokeColor=#8661C5;strokeWidth=2;fontColor=#5C2E91;" vertex="1" parent="1">
+          <mxGeometry x="340" y="200" width="560" height="600" as="geometry" />
+        </mxCell>
+        <mxCell id="caeLbl" value="Azure Container Apps Environment (CAE) — IMUTÁVEL: a VNet do env não muda pós-criação → VNet+CAE nascem PRIMEIRO, FQDN do gateway ANTES de VITE_*/CORS (ADE-009 Inv 3, lição das Quartas)" style="text;html=1;fontSize=10;fontStyle=1;fontColor=#5C2E91;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;whiteSpace=wrap;" vertex="1" parent="1">
+          <mxGeometry x="348" y="206" width="544" height="46" as="geometry" />
+        </mxCell>
+
+        <!-- Gateway (guardiao) -->
+        <mxCell id="gw" value="" style="sketch=0;html=1;aspect=fixed;image;verticalLabelPosition=bottom;verticalAlign=top;align=center;fontSize=9;image=img/lib/azure2/app_services/App_Services.svg;" vertex="1" parent="1">
+          <mxGeometry x="410" y="290" width="46" height="46" as="geometry" />
+        </mxCell>
+        <mxCell id="gwNote" value="ca-gateway · YARP (.NET 8) · ingress EXTERNO&#10;O GUARDIÃO ÚNICO DO JWT (ADE-004 preservada): valida Bearer dual-issuer (CIAM cliente + workforce admin, ADE-007). Injeta X-Entra-OID (anti-spoof) + X-Correlation-ID. INJETA X-Gateway-Key (timing-safe) nos clusters confiáveis." style="rounded=1;arcSize=8;html=1;fillColor=#F3F0FA;strokeColor=#8661C5;fontColor=#5C2E91;fontSize=9;align=left;verticalAlign=middle;spacingLeft=8;spacingRight=8;whiteSpace=wrap;" vertex="1" parent="1">
+          <mxGeometry x="468" y="270" width="410" height="86" as="geometry" />
+        </mxCell>
+
+        <!-- McpServer (interno) -->
+        <mxCell id="mcp" value="" style="sketch=0;html=1;aspect=fixed;image;verticalLabelPosition=bottom;verticalAlign=top;align=center;fontSize=9;image=img/lib/azure2/app_services/App_Services.svg;" vertex="1" parent="1">
+          <mxGeometry x="410" y="440" width="46" height="46" as="geometry" />
+        </mxCell>
+        <mxCell id="mcpNote" value="ca-mcp · ingress INTERNO (provisionado/alvo — não versionado em IaC) · /mcp + /llm&#10;VALIDA X-Gateway-Key (novo middleware, Story 4.2 AC-7) antes de MapMcp — fecha a lacuna &quot;sem IaC de ingress:internal&quot;. Read-only por construção (7 tools SELECT). /health ISENTO do header (AC-8)." style="rounded=1;arcSize=8;html=1;fillColor=#FDECEA;strokeColor=#C0392B;fontColor=#922B21;fontSize=9;align=left;verticalAlign=middle;spacingLeft=8;spacingRight=8;whiteSpace=wrap;" vertex="1" parent="1">
+          <mxGeometry x="468" y="422" width="410" height="82" as="geometry" />
+        </mxCell>
+
+        <!-- FlowEvents -->
+        <mxCell id="flow" value="" style="sketch=0;html=1;aspect=fixed;image;verticalLabelPosition=bottom;verticalAlign=top;align=center;fontSize=9;image=img/lib/azure2/app_services/App_Services.svg;" vertex="1" parent="1">
+          <mxGeometry x="410" y="600" width="46" height="46" as="geometry" />
+        </mxCell>
+        <mxCell id="flowNote" value="ca-flow · ingress externo (WebSocket)&#10;Flow Visualizer (F6). NÃO recebe X-Gateway-Key — o cluster flow-events fica FORA do HashSet confiável (Story 4.2 AC-2; ADE-009 Inv 1 só cita v1/Functions/McpServer). Farol de MI: já lê Log Analytics via Managed Identity." style="rounded=1;arcSize=8;html=1;fillColor=#F5EEFB;strokeColor=#8661C5;fontColor=#5C2E91;fontSize=9;align=left;verticalAlign=middle;spacingLeft=8;spacingRight=8;whiteSpace=wrap;" vertex="1" parent="1">
+          <mxGeometry x="468" y="582" width="410" height="86" as="geometry" />
+        </mxCell>
+
+        <!-- SQL Private Endpoint (T2 showcase, dentro da VNet) -->
+        <mxCell id="pe" value="Private Endpoint → Azure SQL&#10;★ T2 SHOWCASE / OPCIONAL&#10;(quando enablePrivateEndpoint=true → publicNetworkAccess: Disabled, Story 4.2 AC-10)&#10;Se a turma não provisiona, este PE NÃO existe — o SQL é alcançado por MI-AAD com publicNetworkAccess restrito (T1)." style="rounded=1;arcSize=8;html=1;fillColor=#FFFFFF;strokeColor=#8A8886;strokeWidth=2;dashed=1;dashPattern=8 5;fontColor=#605E5C;fontSize=9;align=left;verticalAlign=middle;spacingLeft=8;spacingRight=8;whiteSpace=wrap;" vertex="1" parent="1">
+          <mxGeometry x="960" y="600" width="320" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="peTag" value="OPCIONAL" style="rounded=1;arcSize=40;html=1;fillColor=#8A8886;strokeColor=#8A8886;fontColor=#FFFFFF;fontSize=9;fontStyle=1;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="1200" y="606" width="72" height="20" as="geometry" />
+        </mxCell>
+
+        <!-- ============ BACKENDS CONFIAVEIS (T1 floor) ============ -->
+        <mxCell id="trustBand" value="BACKENDS QUE PROVAM &quot;o gateway me chamou&quot; — X-Gateway-Key (T1, US$0, SEMPRE) · gateway segue o único validador de JWT" style="rounded=1;arcSize=6;html=1;fillColor=#FDECEA;strokeColor=#C0392B;strokeWidth=1.5;dashed=1;dashPattern=8 5;fontColor=#922B21;fontSize=11;fontStyle=1;verticalAlign=top;spacingTop=6;align=center;opacity=50;" vertex="1" parent="1">
+          <mxGeometry x="1360" y="200" width="410" height="420" as="geometry" />
+        </mxCell>
+
+        <mxCell id="functions" value="Functions F1 (isolated worker)&#10;Anonymous + trust X-Gateway-Key" style="sketch=0;html=1;aspect=fixed;image;verticalLabelPosition=bottom;verticalAlign=top;align=center;fontSize=10;image=img/lib/azure2/compute/Function_Apps.svg;" vertex="1" parent="1">
+          <mxGeometry x="1420" y="270" width="50" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="functionsNote" value="PurchaseEntry/StatusFunction: middleware novo (Story 4.2 AC-5) valida X-Gateway-Key SÓ em invocações HTTP (Service Bus-triggered Consumer passa direto). FECHA O P0 (a demo-dinheiro): curl forjando X-Entra-OID DIRETO na Function → 401; via gateway → 200." style="rounded=1;arcSize=8;html=1;fillColor=#FDECEA;strokeColor=#C0392B;fontColor=#922B21;fontSize=9;align=left;verticalAlign=middle;spacingLeft=8;spacingRight=8;whiteSpace=wrap;" vertex="1" parent="1">
+          <mxGeometry x="1490" y="252" width="262" height="96" as="geometry" />
+        </mxCell>
+
+        <mxCell id="backend" value="Backend v1 (App Service · Node)&#10;gatewayTrust.js (farol reusado)" style="sketch=0;html=1;aspect=fixed;image;verticalLabelPosition=bottom;verticalAlign=top;align=center;fontSize=10;image=img/lib/azure2/app_services/App_Services.svg;" vertex="1" parent="1">
+          <mxGeometry x="1420" y="460" width="50" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="backendNote" value="Backend v1: já valida X-Gateway-Key desde as Quartas (crypto.timingSafeEqual, fail-closed quando o segredo está configurado, legado quando vazio). É a ORIGEM do padrão que a Story 4.2 generalizou p/ Functions/McpServer (CryptographicOperations.FixedTimeEquals em .NET)." style="rounded=1;arcSize=8;html=1;fillColor=#FDECEA;strokeColor=#C0392B;fontColor=#922B21;fontSize=9;align=left;verticalAlign=middle;spacingLeft=8;spacingRight=8;whiteSpace=wrap;" vertex="1" parent="1">
+          <mxGeometry x="1490" y="442" width="262" height="96" as="geometry" />
+        </mxCell>
+
+        <!-- ============ DATA PLANE (via MI-AAD) ============ -->
+        <mxCell id="dataBand" value="DATA-PLANE — autentica por Managed Identity + Entra ID (ZERO connection string; menor-privilégio por serviço) · ADE-009 Inv 2 / Story 4.1" style="rounded=1;arcSize=6;html=1;fillColor=#E6F7F4;strokeColor=#0E8A7D;strokeWidth=1.5;dashed=1;dashPattern=8 5;fontColor=#0E8A7D;fontSize=11;fontStyle=1;verticalAlign=top;spacingTop=6;align=center;opacity=40;" vertex="1" parent="1">
+          <mxGeometry x="340" y="900" width="1430" height="330" as="geometry" />
+        </mxCell>
+
+        <mxCell id="sql" value="Azure SQL · FIFA2026Tickets" style="sketch=0;html=1;aspect=fixed;image;verticalLabelPosition=bottom;verticalAlign=top;align=center;fontSize=10;image=img/lib/azure2/databases/SQL_Database.svg;" vertex="1" parent="1">
+          <mxGeometry x="410" y="980" width="50" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="sqlNote" value="AAD admin no servidor (Story 4.1 AC-4, novo recurso Microsoft.Sql/servers/administrators no bicep). Contained users FROM EXTERNAL PROVIDER (DDL @data-engineer, phase-08-contained-users.sql):&#10;• McpServer → db_datareader-ONLY (regra de ouro vira garantia de RBAC)&#10;• Functions Consumer → db_datawriter + db_datareader&#10;AllowAllAzureServices (0.0.0.0) REMOVIDO (Story 4.2 AC-9, Inv 4). SQL-auth admin humano preservado (AC-5)." style="rounded=1;arcSize=8;html=1;fillColor=#E6F7F4;strokeColor=#0E8A7D;fontColor=#0E8A7D;fontSize=9;align=left;verticalAlign=middle;spacingLeft=8;spacingRight=8;whiteSpace=wrap;" vertex="1" parent="1">
+          <mxGeometry x="330" y="1050" width="360" height="120" as="geometry" />
+        </mxCell>
+
+        <mxCell id="sbus" value="Azure Service Bus&#10;fila tickets-purchase" style="sketch=0;html=1;aspect=fixed;image;verticalLabelPosition=bottom;verticalAlign=top;align=center;fontSize=10;image=img/lib/azure2/integration/Service_Bus.svg;" vertex="1" parent="1">
+          <mxGeometry x="830" y="980" width="50" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="sbusNote" value="MI + roles de data-plane (Story 4.1 AC-9): Entry (produtor) = Azure Service Bus Data Sender; Consumer = Data Receiver. Binding [ServiceBusOutput]/[ServiceBusTrigger] não muda — só a App Setting ServiceBusConnection__fullyQualifiedNamespace (+ __credential=managedidentity)." style="rounded=1;arcSize=8;html=1;fillColor=#E6F7F4;strokeColor=#0E8A7D;fontColor=#0E8A7D;fontSize=9;align=left;verticalAlign=middle;spacingLeft=8;spacingRight=8;whiteSpace=wrap;" vertex="1" parent="1">
+          <mxGeometry x="760" y="1050" width="360" height="120" as="geometry" />
+        </mxCell>
+
+        <mxCell id="acr" value="Azure Container Registry (ACR)" style="sketch=0;html=1;aspect=fixed;image;verticalLabelPosition=bottom;verticalAlign=top;align=center;fontSize=10;image=img/lib/azure2/app_services/App_Services.svg;" vertex="1" parent="1">
+          <mxGeometry x="1260" y="980" width="50" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="acrNote" value="ACR-pull via Managed Identity (Story 4.1 AC-10): FlowEvents já é o farol (identity:system + AcrPull); estendido a Gateway e McpServer (az containerapp identity assign --system-assigned + AcrPull). Antes: Admin Credentials do ACR (usuário/senha) — substituídas por MI." style="rounded=1;arcSize=8;html=1;fillColor=#E6F7F4;strokeColor=#0E8A7D;fontColor=#0E8A7D;fontSize=9;align=left;verticalAlign=middle;spacingLeft=8;spacingRight=8;whiteSpace=wrap;" vertex="1" parent="1">
+          <mxGeometry x="1190" y="1050" width="360" height="120" as="geometry" />
+        </mxCell>
+
+        <!-- ============ OBSERVABILIDADE ============ -->
+        <mxCell id="obsv" value="App Insights + Log Analytics&#10;appi-/log-dev-tk-cin-001" style="sketch=0;html=1;aspect=fixed;image;verticalLabelPosition=bottom;verticalAlign=top;align=center;fontSize=10;image=img/lib/azure2/devops/Application_Insights.svg;" vertex="1" parent="1">
+          <mxGeometry x="960" y="270" width="50" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="obsvNote" value="FlowEvents lê o Kusto por correlationId via MI (role Log Analytics Reader — Story 4.1 AC-11, farol já existente). Mesma disciplina de identidade da MI que lê o Key Vault (ADE-010 §Observabilidade). X-Correlation-ID (W3C) propaga Gateway→Function→Service Bus→Consumer." style="rounded=1;arcSize=8;html=1;fillColor=#EFF6FC;strokeColor=#0078D4;fontColor=#0078D4;fontSize=9;align=left;verticalAlign=middle;spacingLeft=8;spacingRight=8;whiteSpace=wrap;" vertex="1" parent="1">
+          <mxGeometry x="960" y="330" width="330" height="86" as="geometry" />
+        </mxCell>
+        <mxCell id="signalr" value="Azure SignalR&#10;(Free_F1 · Default)&#10;FlowHub — push por grupo" style="rounded=1;arcSize=10;html=1;fillColor=#F5EEFB;strokeColor=#8661C5;fontColor=#5C2E91;fontSize=10;align=center;verticalAlign=middle;whiteSpace=wrap;" vertex="1" parent="1">
+          <mxGeometry x="960" y="440" width="200" height="70" as="geometry" />
+        </mxCell>
+
+        <!-- ============ PLANO DE SEGREDOS / IDENTIDADE (Key Vault + MI) ============ -->
+        <mxCell id="secBoundary" value="" style="rounded=1;arcSize=3;html=1;fillColor=#FFF7E6;strokeColor=#B58A00;strokeWidth=2;dashed=1;dashPattern=8 5;opacity=50;" vertex="1" parent="1">
+          <mxGeometry x="1810" y="120" width="270" height="700" as="geometry" />
+        </mxCell>
+        <mxCell id="secLbl" value="PLANO DE SEGREDOS + IDENTIDADE (T1, US$0) — ADE-010 (hands-on via Portal — não versionado em IaC)" style="text;html=1;fontSize=10;fontStyle=1;fontColor=#8A6D00;align=center;verticalAlign=top;spacingTop=6;whiteSpace=wrap;" vertex="1" parent="1">
+          <mxGeometry x="1818" y="128" width="254" height="34" as="geometry" />
+        </mxCell>
+
+        <mxCell id="kv" value="Azure Key Vault&#10;kv-dev-tk-cin-001&#10;(RBAC habilitado)" style="rounded=1;arcSize=10;html=1;fillColor=#FEF7E0;strokeColor=#EA9A00;fontColor=#8A6D00;fontSize=10;fontStyle=1;align=center;verticalAlign=middle;whiteSpace=wrap;" vertex="1" parent="1">
+          <mxGeometry x="1850" y="175" width="190" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="kvSecrets" value="Secrets (valor byte-idêntico ao plaintext de hoje — ADE-010 D3):&#10;• gateway-admin-shared-secret&#10;   (X-Gateway-Key — MESMO valor injeta+valida; igualdade vira garantia estrutural)&#10;• gemini / groq / mistral-api-key&#10;• sql-connection-string&#10;• azure-signalr-connection-string&#10;• appinsights-connection-string" style="rounded=1;arcSize=6;html=1;fillColor=#FFFFFF;strokeColor=#EA9A00;fontColor=#8A6D00;fontSize=9;align=left;verticalAlign=middle;spacingLeft=8;spacingRight=8;whiteSpace=wrap;" vertex="1" parent="1">
+          <mxGeometry x="1826" y="250" width="238" height="180" as="geometry" />
+        </mxCell>
+        <mxCell id="uami" value="UA-MI compartilhada&#10;id-fifa2026-kv-reader&#10;role: Key Vault Secrets User&#10;LÊ o cofre p/ TODOS os apps (1 grant, sobrevive à recriação manual). Anexada a: gateway, McpServer, FlowEvents, backend, Functions." style="rounded=1;arcSize=8;html=1;fillColor=#FFF7E6;strokeColor=#B58A00;fontColor=#8A6D00;fontSize=9;fontStyle=1;align=left;verticalAlign=middle;spacingLeft=8;spacingRight=8;whiteSpace=wrap;" vertex="1" parent="1">
+          <mxGeometry x="1826" y="448" width="238" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="sysmi" value="System-assigned MI por-app — SÓ p/ o SQL (Fase 2/showcase): menor-privilégio exige identidade por-serviço (McpServer db_datareader-only ≠ Functions writer). Uma UA colapsaria os dois no mesmo contained user (ADE-010 D1/D5)." style="rounded=1;arcSize=8;html=1;fillColor=#FFFFFF;strokeColor=#B58A00;fontColor=#8A6D00;fontSize=9;align=left;verticalAlign=middle;spacingLeft=8;spacingRight=8;whiteSpace=wrap;" vertex="1" parent="1">
+          <mxGeometry x="1826" y="582" width="238" height="120" as="geometry" />
+        </mxCell>
+
+        <!-- =========================================================== -->
+        <!-- ============            EDGES              ================ -->
+        <!-- =========================================================== -->
+
+        <!-- browser -> frontend (loads SPA) -->
+        <mxCell id="eLoad" value="carrega o SPA (HTTPS)" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=0;endArrow=block;strokeColor=#0078D4;strokeWidth=1.5;fontColor=#0078D4;fontSize=9;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="browser" target="frontend">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <!-- browser -> gateway (API) -->
+        <mxCell id="eApi" value="HTTPS + Bearer (CIAM/admin) — o gateway é a ÚNICA porta" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=0;endArrow=block;flowAnimation=1;strokeColor=#0078D4;strokeWidth=2.5;fontColor=#0078D4;fontSize=10;fontStyle=1;labelBackgroundColor=#FFFFFF;exitX=1;exitY=0.3;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="browser" target="gw">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- gateway -> functions (X-Gateway-Key + X-Entra-OID) -->
+        <mxCell id="eGwFn" value="X-Gateway-Key (timing-safe)" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=0;endArrow=block;flowAnimation=1;strokeColor=#C0392B;strokeWidth=2.5;fontColor=#C0392B;fontSize=10;fontStyle=1;labelBackgroundColor=#FFFFFF;exitX=1;exitY=0.15;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="gw" target="functions">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="eGwFnOid" value="+ X-Entra-OID (identidade, ADE-007)" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=0;endArrow=open;dashed=1;strokeColor=#B58A00;strokeWidth=1.5;fontColor=#8A6D00;fontSize=9;labelBackgroundColor=#FFFFFF;exitX=1;exitY=0.28;exitDx=0;exitDy=0;entryX=0;entryY=0.75;entryDx=0;entryDy=0;" edge="1" parent="1" source="gw" target="functions">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- gateway -> backend (X-Gateway-Key) -->
+        <mxCell id="eGwBk" value="X-Gateway-Key" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=0;endArrow=block;flowAnimation=1;strokeColor=#C0392B;strokeWidth=2.5;fontColor=#C0392B;fontSize=10;fontStyle=1;labelBackgroundColor=#FFFFFF;exitX=1;exitY=0.85;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="gw" target="backend">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- gateway -> mcp (X-Gateway-Key + X-Entra-OID) -->
+        <mxCell id="eGwMcp" value="X-Gateway-Key" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=0;endArrow=block;flowAnimation=1;strokeColor=#C0392B;strokeWidth=2.5;fontColor=#C0392B;fontSize=10;fontStyle=1;labelBackgroundColor=#FFFFFF;exitX=0.4;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="gw" target="mcp">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="eGwMcpOid" value="+ X-Entra-OID (só logging; McpServer NUNCA revalida JWT)" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=0;endArrow=open;dashed=1;strokeColor=#B58A00;strokeWidth=1.5;fontColor=#8A6D00;fontSize=9;labelBackgroundColor=#FFFFFF;exitX=0.6;exitY=1;exitDx=0;exitDy=0;entryX=0.7;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="gw" target="mcp">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- gateway -> flow (NO key — recent/timeline/SignalR) -->
+        <mxCell id="eGwFlow" value="proxy /flow-events (recent/timeline/WebSocket) — SEM X-Gateway-Key (cluster flow-events fora do escopo, AC-2)" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=0;endArrow=block;strokeColor=#8661C5;strokeWidth=1.5;fontColor=#5C2E91;fontSize=9;labelBackgroundColor=#FFFFFF;exitX=0.2;exitY=1;exitDx=0;exitDy=0;entryX=0.3;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="gw" target="flow">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- gateway -> flow (X-Diploma-Key — SÓ a rota diploma-summary, Emenda MEDIUM-4 / ADE-009 v1.1) -->
+        <mxCell id="eGwFlowDiploma" value="X-Diploma-Key (só rota /diploma-summary, Bearer-gated) — Emenda MEDIUM-4" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=0;endArrow=block;dashed=1;dashPattern=6 4;strokeColor=#8661C5;strokeWidth=2;fontColor=#5C2E91;fontSize=9;fontStyle=1;labelBackgroundColor=#FFFFFF;exitX=0.28;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="gw" target="flow">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="diplomaNote" value="Diploma = ÚNICO endpoint do FlowEvents atrás de auth+proveniência: Bearer (blanket RequireAuthorization) + X-Diploma-Key route-scoped (reuso do gateway-admin-shared-secret sob header distinto). recent/timeline/SignalR seguem anônimos (MEDIUM-1). ADE-009 v1.1." style="rounded=1;arcSize=8;html=1;fillColor=#F3EEF9;strokeColor=#8661C5;fontColor=#5C2E91;fontSize=9;align=left;verticalAlign=middle;spacingLeft=8;spacingRight=8;whiteSpace=wrap;" vertex="1" parent="1">
+          <mxGeometry x="600" y="470" width="250" height="66" as="geometry" />
+        </mxCell>
+
+        <!-- functions -> service bus (MI) -->
+        <mxCell id="eFnSb" value="MI · Sender/Receiver" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=0;endArrow=block;flowAnimation=1;strokeColor=#0E8A7D;strokeWidth=2;fontColor=#0E8A7D;fontSize=10;labelBackgroundColor=#FFFFFF;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="functions" target="sbus">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <!-- functions -> sql (MI writer) -->
+        <mxCell id="eFnSql" value="MI-AAD · db_datawriter+reader" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=0;endArrow=block;flowAnimation=1;strokeColor=#0E8A7D;strokeWidth=2;fontColor=#0E8A7D;fontSize=10;labelBackgroundColor=#FFFFFF;exitX=0.3;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="functions" target="sql">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <!-- mcp -> sql (MI reader only) -->
+        <mxCell id="eMcpSql" value="MI-AAD · db_datareader-ONLY (regra de ouro = RBAC)" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=0;endArrow=block;flowAnimation=1;strokeColor=#0E8A7D;strokeWidth=2;fontColor=#0E8A7D;fontSize=10;fontStyle=1;labelBackgroundColor=#FFFFFF;exitX=0.3;exitY=1;exitDx=0;exitDy=0;entryX=0.15;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="mcp" target="sql">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <!-- mcp -> acr (pull) -->
+        <mxCell id="eMcpAcr" value="MI · AcrPull" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=0;endArrow=block;strokeColor=#0E8A7D;strokeWidth=1.5;fontColor=#0E8A7D;fontSize=9;labelBackgroundColor=#FFFFFF;exitX=1;exitY=0.6;exitDx=0;exitDy=0;entryX=0;entryY=0.4;entryDx=0;entryDy=0;" edge="1" parent="1" source="mcp" target="acr">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <!-- gw -> acr (pull) -->
+        <mxCell id="eGwAcr" value="MI · AcrPull" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=0;endArrow=block;strokeColor=#0E8A7D;strokeWidth=1.5;fontColor=#0E8A7D;fontSize=9;labelBackgroundColor=#FFFFFF;exitX=0.6;exitY=1;exitDx=0;exitDy=0;entryX=0.8;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="gw" target="acr">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <!-- flow -> obsv (log analytics reader) -->
+        <mxCell id="eFlowLog" value="MI · Log Analytics Reader (Kusto)" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=0;endArrow=block;strokeColor=#0E8A7D;strokeWidth=1.5;fontColor=#0E8A7D;fontSize=9;labelBackgroundColor=#FFFFFF;exitX=1;exitY=0.3;exitDx=0;exitDy=0;entryX=0;entryY=0.9;entryDx=0;entryDy=0;" edge="1" parent="1" source="flow" target="obsv">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <!-- flow -> signalr -->
+        <mxCell id="eFlowSr" value="push FlowEvent (conn string via KV ref)" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=0;endArrow=block;strokeColor=#8661C5;strokeWidth=1.5;fontColor=#5C2E91;fontSize=9;labelBackgroundColor=#FFFFFF;exitX=1;exitY=0.7;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="flow" target="signalr">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- SQL PE showcase link -->
+        <mxCell id="ePeSql" value="quando T2 provisionado: tráfego SQL entra pelo PE (rede fechada); senão, MI-AAD público-restrito (T1)" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=0;endArrow=block;dashed=1;dashPattern=8 5;strokeColor=#8A8886;strokeWidth=1.5;fontColor=#605E5C;fontSize=9;labelBackgroundColor=#FFFFFF;exitX=0.3;exitY=1;exitDx=0;exitDy=0;entryX=0.85;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="pe" target="sql">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- UA-MI -> KV (Key Vault Secrets User) -->
+        <mxCell id="eUamiKv" value="Key Vault Secrets User (lê o valor do segredo — só leitura)" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=0;endArrow=block;strokeColor=#B58A00;strokeWidth=2;fontColor=#8A6D00;fontSize=9;fontStyle=1;labelBackgroundColor=#FFFFFF;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;" edge="1" parent="1" source="uami" target="kvSecrets">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- KV references (UA-MI resolve) to apps: gateway, mcp, functions, backend, flow -->
+        <mxCell id="eKvGw" value="KV ref" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=0;endArrow=open;dashed=1;dashPattern=4 4;strokeColor=#8661C5;strokeWidth=1.5;fontColor=#5C2E91;fontSize=9;labelBackgroundColor=#FFFFFF;exitX=0;exitY=0.15;exitDx=0;exitDy=0;entryX=1;entryY=0.15;entryDx=0;entryDy=0;" edge="1" parent="1" source="uami" target="gwNote">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="eKvFn" value="KV ref (gateway-shared-secret, sql-conn)" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=0;endArrow=open;dashed=1;dashPattern=4 4;strokeColor=#8661C5;strokeWidth=1.5;fontColor=#5C2E91;fontSize=9;labelBackgroundColor=#FFFFFF;exitX=0;exitY=0.4;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="uami" target="functionsNote">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="eKvMcp" value="KV ref (gemini/groq/mistral, sql-conn, gateway-secret)" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=0;endArrow=open;dashed=1;dashPattern=4 4;strokeColor=#8661C5;strokeWidth=1.5;fontColor=#5C2E91;fontSize=9;labelBackgroundColor=#FFFFFF;exitX=0;exitY=0.6;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="uami" target="mcpNote">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="eKvFlow" value="KV ref (signalr-conn)" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=0;endArrow=open;dashed=1;dashPattern=4 4;strokeColor=#8661C5;strokeWidth=1.5;fontColor=#5C2E91;fontSize=9;labelBackgroundColor=#FFFFFF;exitX=0;exitY=0.85;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="uami" target="flowNote">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="eKvBk" value="KV ref (gateway-shared-secret)" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=0;endArrow=open;dashed=1;dashPattern=4 4;strokeColor=#8661C5;strokeWidth=1.5;fontColor=#5C2E91;fontSize=9;labelBackgroundColor=#FFFFFF;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="uami" target="backendNote">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- =========================================================== -->
+        <!-- ============           LEGENDA            ================ -->
+        <!-- =========================================================== -->
+        <mxCell id="legendBox" value="LEGENDA" style="rounded=1;arcSize=3;html=1;fillColor=#FFFFFF;strokeColor=#605E5C;strokeWidth=1.5;fontColor=#605E5C;fontSize=12;fontStyle=1;verticalAlign=top;spacingTop=8;align=left;spacingLeft=12;whiteSpace=wrap;" vertex="1" parent="1">
+          <mxGeometry x="40" y="850" width="270" height="380" as="geometry" />
+        </mxCell>
+        <mxCell id="lg1" value="Tráfego público / HTTPS + Bearer" style="text;html=1;fontSize=10;align=left;verticalAlign=middle;fontColor=#0078D4;" vertex="1" parent="1">
+          <mxGeometry x="110" y="888" width="190" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="lgL1" value="" style="endArrow=block;html=1;strokeColor=#0078D4;strokeWidth=2.5;" edge="1" parent="1"><mxGeometry relative="1" as="geometry"><mxPoint x="58" y="898" as="sourcePoint" /><mxPoint x="102" y="898" as="targetPoint" /></mxGeometry></mxCell>
+        <mxCell id="lg2" value="X-Gateway-Key (confiança de origem — trava de app-layer, T1)" style="text;html=1;fontSize=10;align=left;verticalAlign=middle;fontColor=#C0392B;" vertex="1" parent="1">
+          <mxGeometry x="110" y="920" width="195" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="lgL2" value="" style="endArrow=block;html=1;strokeColor=#C0392B;strokeWidth=2.5;" edge="1" parent="1"><mxGeometry relative="1" as="geometry"><mxPoint x="58" y="932" as="sourcePoint" /><mxPoint x="102" y="932" as="targetPoint" /></mxGeometry></mxCell>
+        <mxCell id="lg3" value="X-Entra-OID (identidade do usuário — ADE-007)" style="text;html=1;fontSize=10;align=left;verticalAlign=middle;fontColor=#8A6D00;" vertex="1" parent="1">
+          <mxGeometry x="110" y="958" width="195" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="lgL3" value="" style="endArrow=open;html=1;dashed=1;strokeColor=#B58A00;strokeWidth=1.5;" edge="1" parent="1"><mxGeometry relative="1" as="geometry"><mxPoint x="58" y="970" as="sourcePoint" /><mxPoint x="102" y="970" as="targetPoint" /></mxGeometry></mxCell>
+        <mxCell id="lg4" value="Data-plane via Managed Identity + Entra ID (SEM connection string)" style="text;html=1;fontSize=10;align=left;verticalAlign=middle;fontColor=#0E8A7D;" vertex="1" parent="1">
+          <mxGeometry x="110" y="996" width="195" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="lgL4" value="" style="endArrow=block;html=1;strokeColor=#0E8A7D;strokeWidth=2;" edge="1" parent="1"><mxGeometry relative="1" as="geometry"><mxPoint x="58" y="1008" as="sourcePoint" /><mxPoint x="102" y="1008" as="targetPoint" /></mxGeometry></mxCell>
+        <mxCell id="lg5" value="Key Vault reference (segredo resolvido pela UA-MI leitora)" style="text;html=1;fontSize=10;align=left;verticalAlign=middle;fontColor=#5C2E91;" vertex="1" parent="1">
+          <mxGeometry x="110" y="1034" width="195" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="lgL5" value="" style="endArrow=open;html=1;dashed=1;dashPattern=4 4;strokeColor=#8661C5;strokeWidth=1.5;" edge="1" parent="1"><mxGeometry relative="1" as="geometry"><mxPoint x="58" y="1046" as="sourcePoint" /><mxPoint x="102" y="1046" as="targetPoint" /></mxGeometry></mxCell>
+        <mxCell id="lg6" value="⬛ Boundary sólido roxo = CAE (Container Apps Environment) — T1, sempre" style="text;html=1;fontSize=10;align=left;verticalAlign=middle;fontColor=#5C2E91;whiteSpace=wrap;" vertex="1" parent="1">
+          <mxGeometry x="58" y="1072" width="240" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="lg7" value="▨ Boundary cinza tracejado = VNet/Private Endpoint = T2 SHOWCASE / OPCIONAL (~US$7/mês)" style="text;html=1;fontSize=10;align=left;verticalAlign=middle;fontColor=#8A8886;whiteSpace=wrap;" vertex="1" parent="1">
+          <mxGeometry x="58" y="1108" width="240" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="lg8" value="🟥 vermelho/tracejado = &quot;★ NOVO na Final / hardening&quot; · 🟩 verde = MI · 🟨 âmbar = cofre" style="text;html=1;fontSize=10;align=left;verticalAlign=middle;fontColor=#605E5C;whiteSpace=wrap;" vertex="1" parent="1">
+          <mxGeometry x="58" y="1146" width="240" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="lg9" value="T3 (aspiracional): Private Endpoint p/ KV + Service Bus, NAT Gateway, Function PE = NOMEADO, NÃO CONSTRUÍDO (ADE-009 §Priorização) → fora deste diagrama." style="text;html=1;fontSize=9;fontStyle=2;align=left;verticalAlign=middle;fontColor=#8A8886;whiteSpace=wrap;" vertex="1" parent="1">
+          <mxGeometry x="58" y="1184" width="242" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- ============ T1/T2/T3 CALLOUT ============ -->
+        <mxCell id="tierBox" value="PRIORIZAÇÃO DE ESCOPO (ADE-009 §Priorização; honestidade AC-8)" style="rounded=1;arcSize=3;html=1;fillColor=#FFFFFF;strokeColor=#605E5C;strokeWidth=1.5;fontColor=#605E5C;fontSize=11;fontStyle=1;verticalAlign=top;spacingTop=8;align=left;spacingLeft=12;whiteSpace=wrap;" vertex="1" parent="1">
+          <mxGeometry x="1590" y="850" width="490" height="230" as="geometry" />
+        </mxCell>
+        <mxCell id="tierT1" value="T1 — MUST (US$0, SEMPRE, todo este diagrama exceto a caixa cinza): Managed Identity por serviço + Key Vault (KV refs) + SQL/Service Bus via MI-AAD + X-Gateway-Key nas Functions/McpServer (fim do bypass) + remover AllowAllAzureServices. É o PISO zero-trust." style="rounded=1;arcSize=6;html=1;fillColor=#E6F7F4;strokeColor=#0E8A7D;fontColor=#0E8A7D;fontSize=9;align=left;verticalAlign=middle;spacingLeft=8;spacingRight=8;whiteSpace=wrap;" vertex="1" parent="1">
+          <mxGeometry x="1602" y="888" width="466" height="66" as="geometry" />
+        </mxCell>
+        <mxCell id="tierT2" value="T2 — SHOWCASE (caixa cinza tracejada): SQL Private Endpoint + VNet + CAE VNet-integrado. ~US$7/mês, sobe e derruba no dia. Pré-provisionado pelo instrutor." style="rounded=1;arcSize=6;html=1;fillColor=#F5F5F5;strokeColor=#8A8886;fontColor=#605E5C;fontSize=9;align=left;verticalAlign=middle;spacingLeft=8;spacingRight=8;whiteSpace=wrap;" vertex="1" parent="1">
+          <mxGeometry x="1602" y="962" width="466" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="tierT3" value="T3 — ASPIRACIONAL: PE p/ Key Vault + Service Bus, NAT Gateway, Function PE. NOMEADO, NÃO CONSTRUÍDO — NÃO desenhado aqui (Art. IV / AC-8)." style="rounded=1;arcSize=6;html=1;fillColor=#FFFFFF;strokeColor=#8A8886;fontColor=#8A8886;fontSize=9;fontStyle=2;align=left;verticalAlign=middle;spacingLeft=8;spacingRight=8;whiteSpace=wrap;" vertex="1" parent="1">
+          <mxGeometry x="1602" y="1020" width="466" height="48" as="geometry" />
+        </mxCell>
+
+        <!-- ============ NOTA DE STENCILS + FOOTER ============ -->
+        <mxCell id="stencilNote" value="Nota de stencils (mesma convenção do final-f5-f6-mcp-flow.drawio): a biblioteca Azure2 do draw.io NÃO tem ícone dedicado de Container Apps, Managed Identity, Key Vault, Azure SignalR nem Private Endpoint. Ícones REAIS Azure2 usados: Browser, App_Services (gateway/McpServer/FlowEvents/backend/frontend/ACR — fallback documentado), Function_Apps, Service_Bus, SQL_Database, Application_Insights. Caixas rotuladas nomeiam o produto correto p/ Key Vault, Managed Identity, SignalR e Private Endpoint — nenhuma iconografia inventada." style="text;html=1;fontSize=9;fontStyle=2;align=left;verticalAlign=middle;fontColor=#8A8886;whiteSpace=wrap;" vertex="1" parent="1">
+          <mxGeometry x="320" y="1245" width="1280" height="44" as="geometry" />
+        </mxCell>
+        <mxCell id="foot" value="TFTEC Cloud · Copa do Mundo Azure 2026 — A Grande Final · Story 4.6 Task 4.1 (AC-7/8/10) · Fonte: Stories 4.1 (Done) + 4.2 (Done) + ADE-009 + ADE-010 · perímetro ADE-004/007 preservado · Autoria: Atlas (@analyst) · Squad AIOX TFTEC" style="text;html=1;fontSize=11;fontColor=#605E5C;align=left;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="320" y="1292" width="1280" height="22" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

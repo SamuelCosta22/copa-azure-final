@@ -1,0 +1,652 @@
+name: Lab A Final — Chatbot MCP (F5) + Flow Visualizer (F6)
+
+# Workflow ÚNICO do lab "A Grande Final" (Fase 5 — McpServer 7 sentidos read-only +
+# chatbot Gemini via proxy server-side; Fase 6 — FlowEvents SignalR + Kusto + Flow
+# Visualizer de 5 nós). Espelha o padrão de lab-quartas-de-final.yml / lab-oitavas-de-final.yml.
+#
+# Disparo MANUAL apenas (Actions → "Lab A Final" → Run workflow).
+# O input `acao` controla O QUE roda:
+#   - tudo        → function → mcp-server → gateway → flow-events → frontend (NESTA ORDEM — ver guia Fase 11)
+#   - function    → redeploy da Azure Function F1 (compra v2 async + GET /api/v2/me = MeFunction do JIT CIAM, Story 3.5); só CÓDIGO (preserva os App Settings/secrets herdados)
+#   - mcp-server  → build/test/deploy do McpServer (Container App INTERNO) + App Settings (SQL, Gemini, X-Gateway-Key)
+#   - gateway     → rebuild do Gateway YARP a partir desta branch (arma X-Gateway-Key no cluster mcp-server + lê FlowEventsUrl)
+#   - flow-events → build/test/deploy do FlowEvents (Container App externo/WebSocket) + SignalR + Log Analytics
+#   - frontend    → build único do frontend (chatbot + rota /flow embutidos) + deploy no Web App
+#
+# DESIGN: um único job `lab` com STEPS sequenciais; cada bloco é guardado por
+# `if: ${{ inputs.acao == 'tudo' || inputs.acao == '<bloco>' }}`. Sem `needs` entre
+# blocos (evita a pegadinha do skip quebrar downstream) — mesma estrutura das Oitavas/Quartas.
+#
+# ORIGEM DE CADA BLOCO (reuso, não invenção):
+#   function    ← lab-oitavas-de-final.yml (BLOCO 2 — FUNCTION); o código atual da F1 é superset do das Oitavas (ADICIONA o MeFunction, GET /api/v2/me; mantém Purchase*). Deploy SEM publish profile (via AZURE_CREDENTIALS)
+#   mcp-server  ← deploy-phase-05.yml (job deploy-mcp-server) + App Setting GATEWAY_SHARED_SECRET novo (X-Gateway-Key)
+#   gateway     ← deploy-phase-02.yml (build/test/deploy do Gateway YARP) + smoke fail-closed do lab-quartas-de-final.yml
+#   flow-events ← deploy-phase-06.yml (job deploy-flow-events)
+#   frontend    ← fusão dos jobs deploy-frontend de phase-05 (chatbot + guard de key) e phase-06 (rota /flow)
+#   seletor acao← lab-quartas-de-final.yml
+#
+# IMPORTANTE (infra já provisionada à mão no Portal — ver guia): este workflow NÃO cria
+# recursos Azure. McpServer (ingress interno), FlowEvents (externo/WebSocket), Azure SignalR
+# (Free/Default), Managed Identity + Log Analytics Reader e as App Settings do gateway
+# (McpServerUrl / FlowEventsUrl) são criados no Portal. O workflow só faz BUILD + DEPLOY de
+# imagens/código e aplica os App Settings sensíveis como secrets do Container App.
+#
+# NOTA (McpServer é INTERNO): o smoke do bloco mcp-server NÃO faz curl público de /health
+# (o ingress é "Limited to Container Apps Environment" — sem endereço público). Valida-se a
+# provisão da revisão via az CLI. O /health via gateway com Bearer é o smoke manual da Fase 12.
+#
+# Pré-requisitos no fork (ver docs/runbooks/final-portal-guide.md § Fase 10):
+#   Secrets:  AZURE_CREDENTIALS, PHASE05_SQL_CONNECTION_STRING, GEMINI_API_KEY,
+#             GROQ_API_KEY (opc), MISTRAL_API_KEY (opc), GATEWAY_SHARED_SECRET,
+#             PHASE06_SIGNALR_CONNECTION_STRING, AZURE_FRONTEND_PUBLISH_PROFILE
+#   Vars (comuns):  ACR_LOGIN_SERVER, PHASE02_RESOURCE_GROUP
+#   Vars (function):FUNCTION_APP_NAME (a mesma Function App das Oitavas/Quartas — o job só troca o CÓDIGO)
+#                   + FUNCTION_RESOURCE_GROUP (RG da Function; pode diferir do RG dos Container Apps — usado só pelo smoke via az)
+#   Vars (mcp):     PHASE05_MCP_APP_NAME
+#   Vars (gateway): PHASE02_CONTAINERAPP_NAME
+#   Vars (flow):    PHASE06_FLOW_APP_NAME, PHASE06_LOG_ANALYTICS_WORKSPACE_ID, PHASE06_FRONTEND_ORIGIN
+#   Vars (frontend):FRONTEND_APP_NAME, VITE_GATEWAY_V2_URL, VITE_LLM_PROXY_URL,
+#                   VITE_LLM_PROVIDER, VITE_GEMINI_MODEL (opc), VITE_FLOW_EVENTS_BASE_URL
+
+on:
+  workflow_dispatch:
+    inputs:
+      acao:
+        description: 'O que executar'
+        type: choice
+        required: true
+        default: 'tudo'
+        options:
+          - tudo
+          - function
+          - mcp-server
+          - flow-events
+          - gateway
+          - frontend
+      resource_group:
+        description: '(opcional) Resource group override'
+        required: false
+      function_app_name:
+        description: '(opcional) Azure Function App (F1) name override'
+        required: false
+      mcp_app_name:
+        description: '(opcional) McpServer Container App name override'
+        required: false
+      containerapp_name:
+        description: '(opcional) Gateway Container App name override'
+        required: false
+      flow_app_name:
+        description: '(opcional) FlowEvents Container App name override'
+        required: false
+      frontend_app_name:
+        description: '(opcional) Frontend Web App name override'
+        required: false
+
+env:
+  DOTNET_VERSION: '8.0.x'
+  NODE_VERSION: '20'
+  DEFAULT_RESOURCE_GROUP: 'rg-hml-tik-cin-001'
+  # --- function (F1) ---
+  FUNCTION_PROJECT_PATH: 'src/Fifa2026.V2.Functions'
+  FUNCTION_TEST_PATH: 'src/Fifa2026.V2.Functions.Tests'
+  # --- mcp-server ---
+  MCP_PROJECT_PATH: 'src/Fifa2026.V2.McpServer'
+  MCP_TEST_PATH: 'src/Fifa2026.V2.McpServer.Tests'
+  MCP_IMAGE_NAME: 'mcp-server'
+  # --- gateway ---
+  GATEWAY_PROJECT_PATH: 'src/Fifa2026.V2.Gateway'
+  GATEWAY_TEST_PATH: 'src/Fifa2026.V2.Gateway.Tests'
+  GATEWAY_IMAGE_NAME: 'gateway'
+  # --- flow-events ---
+  FLOW_PROJECT_PATH: 'src/Fifa2026.V2.FlowEvents'
+  FLOW_TEST_PATH: 'src/Fifa2026.V2.FlowEvents.Tests'
+  FLOW_IMAGE_NAME: 'flow-events'
+  # --- frontend ---
+  FRONTEND_WORKING_DIR: 'Lovable/World Cup Tickets Hub'
+
+jobs:
+  lab:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # =========================================================
+      # BLOCO 1 — FUNCTION (F1)  (acao = tudo | function)
+      #   Redeploy da Azure Function F1 (a fundação v2: compra async + GET /api/v2/me = o
+      #   MeFunction do JIT CIAM, Story 3.5). A App JÁ existe (Oitavas/Quartas) — aqui só
+      #   republicamos o CÓDIGO ATUAL, que é superset do das Oitavas (ADICIONA o MeFunction;
+      #   mantém Purchase*). Sem isto, o frontend/gateway da Final chamam /api/v2/me numa F1
+      #   com deploy velho → 404 → quebra a compra do cliente nato-CIAM (a feature-estrela).
+      #   RETRO-COMPAT (regra dura): o bloco faz APENAS build+test+publish+deploy de CÓDIGO +
+      #   smoke, e NÃO roda nenhum `az appsettings set`/secret. Os settings/secrets HERDADOS —
+      #   ServiceBusConnection/SqlConnectionString/AzureWebJobsStorage/GATEWAY_SHARED_SECRET (Oitavas
+      #   + Fase 9/KV) e as Key Vault references — são preservados pelo zip-deploy. (O functions-
+      #   action pode gerenciar só o WEBSITE_RUN_FROM_PACKAGE, o setting de MODO de deploy; a config
+      #   herdada e a retro-compat das Oitavas/Quartas seguem intactas.)
+      #   Origem: lab-oitavas-de-final.yml (BLOCO 2 — FUNCTION), sem publish profile (AZURE_CREDENTIALS).
+      # =========================================================
+      - name: '[function] Setup .NET'
+        if: ${{ inputs.acao == 'tudo' || inputs.acao == 'function' }}
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: '[function] Restore'
+        if: ${{ inputs.acao == 'tudo' || inputs.acao == 'function' }}
+        run: dotnet restore ${{ env.FUNCTION_PROJECT_PATH }}
+
+      - name: '[function] Build'
+        if: ${{ inputs.acao == 'tudo' || inputs.acao == 'function' }}
+        run: dotnet build ${{ env.FUNCTION_PROJECT_PATH }} -c Release --no-restore
+
+      - name: '[function] Test'
+        # SEM --no-build (lição do gate S2.1 / H-1): o dotnet test faz restore+build do
+        # projeto de testes E da dependência Fifa2026.V2.Functions em Release.
+        if: ${{ inputs.acao == 'tudo' || inputs.acao == 'function' }}
+        run: dotnet test ${{ env.FUNCTION_TEST_PATH }} -c Release --verbosity normal
+
+      - name: '[function] Publish'
+        if: ${{ inputs.acao == 'tudo' || inputs.acao == 'function' }}
+        run: dotnet publish ${{ env.FUNCTION_PROJECT_PATH }} -c Release -o ./publish-f1 --no-build
+
+      - name: '[function] Azure login (Service Principal)'
+        if: ${{ inputs.acao == 'tudo' || inputs.acao == 'function' }}
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: '[function] Deploy to Azure Functions (via AZURE_CREDENTIALS — sem publish profile)'
+        if: ${{ inputs.acao == 'tudo' || inputs.acao == 'function' }}
+        uses: Azure/functions-action@v1
+        with:
+          # Precedência: input manual → GitHub Variable. SEM publish-profile: o deploy autentica
+          # pela sessão az (azure/login acima, RBAC do SP) — não exige um secret novo no fork.
+          # functions-action faz zip-deploy do CÓDIGO e preserva as App Settings herdadas (pode
+          # gerenciar apenas o WEBSITE_RUN_FROM_PACKAGE, o setting de MODO de deploy).
+          app-name: ${{ inputs.function_app_name || vars.FUNCTION_APP_NAME }}
+          package: ./publish-f1
+
+      - name: '[function] Smoke — MeFunction deployado (control-plane + HTTP; sem poluir o banco)'
+        # Prova que o /api/v2/me (MeFunction) está no deploy da F1 por DOIS caminhos — o que
+        # confirmar primeiro vale. NÃO copiamos o smoke das Oitavas (POST /api/v2/purchase criava
+        # uma compra REAL):
+        #   (1) CONTROL PLANE — `az functionapp function show ... MeFunction`: prova DEFINITIVA,
+        #       imune a cold start e a rede fechada (a F1 pode ser Windows/B1 e/ou privada). Usa o
+        #       RG DA FUNCTION (FUNCTION_RESOURCE_GROUP) — que pode diferir do RG dos Container Apps.
+        #   (2) HTTP — GET /api/v2/me != 404 (bônus, se a F1 for pública e estiver quente): 401
+        #       (middleware/MeFunction sem X-Entra-OID) ou 2xx/403 provam a rota.
+        # Re-tenta ~6 x 10s (cobre o sync pós-deploy / cold start). Falha só se NENHUM caminho
+        # confirmar (deploy velho, sem o MeFunction) — aí a compra nato-CIAM quebraria (Story 3.5).
+        if: ${{ inputs.acao == 'tudo' || inputs.acao == 'function' }}
+        env:
+          APP_NAME: ${{ inputs.function_app_name || vars.FUNCTION_APP_NAME }}
+          # RG da Function App — SEPARADO do dos Container Apps (podem estar em RGs diferentes).
+          # Precedência: FUNCTION_RESOURCE_GROUP (o próprio) → PHASE02_RESOURCE_GROUP → default.
+          FUNCTION_RG: ${{ vars.FUNCTION_RESOURCE_GROUP || vars.PHASE02_RESOURCE_GROUP || env.DEFAULT_RESOURCE_GROUP }}
+        run: |
+          set -uo pipefail
+          echo "Verificando o deploy do MeFunction em '${APP_NAME}' (RG '${FUNCTION_RG}')..."
+          PASS=""
+          for i in $(seq 1 6); do
+            # (1) Control plane: a função MeFunction existe? Imune a cold start / rede fechada.
+            if az functionapp function show -n "$APP_NAME" -g "$FUNCTION_RG" \
+                 --function-name MeFunction >/dev/null 2>&1; then
+              echo "tentativa $i/6: MeFunction presente no control plane (az) — deployado."
+              PASS=1; break
+            fi
+            # (2) HTTP público (bônus). `|| true` evita o bug de duplicar o 000 do -w http_code.
+            CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 \
+              "https://${APP_NAME}.azurewebsites.net/api/v2/me" || true)
+            case "${CODE:-000}" in
+              2??|401|403)
+                echo "tentativa $i/6: GET /api/v2/me → HTTP ${CODE} (rota presente) — deployado."
+                PASS=1; break ;;
+              *)
+                echo "tentativa $i/6: control plane ainda não confirmou; HTTP ${CODE:-000} (transitório) — aguardando..."
+                sleep 10 ;;
+            esac
+          done
+          if [ -z "$PASS" ]; then
+            echo "::error::MeFunction NÃO confirmado em '${APP_NAME}' (RG '${FUNCTION_RG}') — nem 'az functionapp function show MeFunction' nem GET /api/v2/me (≠404). Prováveis causas: deploy velho (sem o MeFunction) OU RG errado (defina a Variable FUNCTION_RESOURCE_GROUP com o RG da SUA Function App). A compra do cliente nato-CIAM quebraria (Story 3.5)."
+            exit 1
+          fi
+          echo "Smoke OK — MeFunction deployado na F1 (a compra nato-CIAM tem rota /api/v2/me)."
+
+      # =========================================================
+      # BLOCO 2 — MCP-SERVER  (acao = tudo | mcp-server)
+      #   McpServer .NET (7 tools read-only, SDK ModelContextProtocol — ADE-002 Inv 1) +
+      #   proxy LLM server-side. Imagem no ACR + App Settings sensíveis como secrets do
+      #   Container App: SQL, GEMINI/GROQ/MISTRAL (proxy) e GATEWAY_SHARED_SECRET (X-Gateway-Key).
+      #   Ingress INTERNO → smoke valida a revisão via az CLI (sem curl público).
+      #   Origem: deploy-phase-05.yml (job deploy-mcp-server).
+      # =========================================================
+      - name: '[mcp-server] Setup .NET'
+        if: ${{ inputs.acao == 'tudo' || inputs.acao == 'mcp-server' }}
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: '[mcp-server] Restore'
+        if: ${{ inputs.acao == 'tudo' || inputs.acao == 'mcp-server' }}
+        run: dotnet restore ${{ env.MCP_PROJECT_PATH }}
+
+      - name: '[mcp-server] Build'
+        if: ${{ inputs.acao == 'tudo' || inputs.acao == 'mcp-server' }}
+        run: dotnet build ${{ env.MCP_PROJECT_PATH }} -c Release --no-restore
+
+      - name: '[mcp-server] Test'
+        # SEM --no-build (lição do gate S2.1 / H-1): o dotnet test faz restore+build do
+        # projeto de testes E da dependência Fifa2026.V2.McpServer em Release.
+        if: ${{ inputs.acao == 'tudo' || inputs.acao == 'mcp-server' }}
+        run: dotnet test ${{ env.MCP_TEST_PATH }} -c Release --verbosity normal
+
+      - name: '[mcp-server] Azure login (Service Principal)'
+        if: ${{ inputs.acao == 'tudo' || inputs.acao == 'mcp-server' }}
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: '[mcp-server] ACR login'
+        if: ${{ inputs.acao == 'tudo' || inputs.acao == 'mcp-server' }}
+        run: az acr login --name ${{ vars.ACR_LOGIN_SERVER }}
+
+      - name: '[mcp-server] Build & push Docker image'
+        if: ${{ inputs.acao == 'tudo' || inputs.acao == 'mcp-server' }}
+        run: |
+          set -euo pipefail
+          IMAGE_TAG="${{ vars.ACR_LOGIN_SERVER }}/${{ env.MCP_IMAGE_NAME }}:${{ github.sha }}"
+          docker build -t "$IMAGE_TAG" "${{ env.MCP_PROJECT_PATH }}"
+          docker push "$IMAGE_TAG"
+          echo "MCP_IMAGE_TAG=$IMAGE_TAG" >> "$GITHUB_ENV"
+
+      - name: '[mcp-server] Deploy Container App + App Settings (keys NUNCA no bundle)'
+        if: ${{ inputs.acao == 'tudo' || inputs.acao == 'mcp-server' }}
+        env:
+          MCP_APP_NAME: ${{ inputs.mcp_app_name || vars.PHASE05_MCP_APP_NAME }}
+          SQL_CONNECTION_STRING: ${{ secrets.PHASE05_SQL_CONNECTION_STRING }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
+          GATEWAY_SHARED_SECRET: ${{ secrets.GATEWAY_SHARED_SECRET }}
+        run: |
+          set -euo pipefail
+          RG="${{ inputs.resource_group || vars.PHASE02_RESOURCE_GROUP || env.DEFAULT_RESOURCE_GROUP }}"
+          # Atualiza a imagem.
+          az containerapp update \
+            --name "$MCP_APP_NAME" \
+            --resource-group "$RG" \
+            --image "$MCP_IMAGE_TAG"
+          # Monta secrets/env-vars CONDICIONALMENTE: um secret com valor vazio faz o ARM
+          # REJEITAR o update — e falharia DEPOIS da troca de imagem. Só entram valores presentes.
+          SECRET_ARGS=()
+          ENV_ARGS=()
+          # SqlConnectionString — as 7 tools consultam o SQL. Três vias:
+          #  1) fork secret PREENCHIDO → aplica inline (protege quem NÃO fez o caminho cofre);
+          #  2) fork secret VAZIO + secret 'sql-conn' JÁ existe no Container App (caminho COFRE,
+          #     Key Vault reference criada no Portal) → NÃO sobrescreve a blindagem; só garante o env var;
+          #  3) fork secret VAZIO + secret ausente → erro claro (nenhuma das duas vias configurada).
+          if [ -n "${SQL_CONNECTION_STRING:-}" ]; then
+            SECRET_ARGS+=( "sql-conn=${SQL_CONNECTION_STRING}" )
+            ENV_ARGS+=( "SqlConnectionString=secretref:sql-conn" )
+          else
+            SQL_SECRET_EXISTS=$(az containerapp secret list \
+              --name "$MCP_APP_NAME" --resource-group "$RG" \
+              --query "[?name=='sql-conn'] | length(@)" -o tsv)
+            if [ "${SQL_SECRET_EXISTS:-0}" -ge 1 ]; then
+              echo "::notice::Caminho COFRE detectado — secret 'sql-conn' já existe no Container App (Key Vault reference). A blindagem NÃO será sobrescrita; apenas o env var será garantido (secretref:sql-conn)."
+              ENV_ARGS+=( "SqlConnectionString=secretref:sql-conn" )
+            else
+              echo "::error::PHASE05_SQL_CONNECTION_STRING vazio E o secret 'sql-conn' não existe no Container App — configure um dos dois (fork secret INLINE ou Key Vault reference no Portal)."
+              exit 1
+            fi
+          fi
+          # GEMINI — necessário p/ o chatbot; ausente = proxy sem chave (aviso, não erro).
+          if [ -n "${GEMINI_API_KEY:-}" ]; then
+            SECRET_ARGS+=( "gemini-key=${GEMINI_API_KEY}" ); ENV_ARGS+=( "GEMINI_API_KEY=secretref:gemini-key" )
+          else
+            echo "::warning::GEMINI_API_KEY ausente — o proxy de LLM ficará sem chave (chatbot indisponível)."
+          fi
+          # GROQ / MISTRAL — opcionais (fallback/portabilidade). Só se presentes.
+          if [ -n "${GROQ_API_KEY:-}" ]; then
+            SECRET_ARGS+=( "groq-key=${GROQ_API_KEY}" ); ENV_ARGS+=( "GROQ_API_KEY=secretref:groq-key" )
+          fi
+          if [ -n "${MISTRAL_API_KEY:-}" ]; then
+            SECRET_ARGS+=( "mistral-key=${MISTRAL_API_KEY}" ); ENV_ARGS+=( "MISTRAL_API_KEY=secretref:mistral-key" )
+          fi
+          # X-Gateway-Key (gateway-secret): fecha o P0 de bypass (Story 4.2 / ADE-009). O guia
+          # (Fase 3.3 / 4.2) permite caminho MANUAL (App Setting no Portal) OU este secret do fork —
+          # ausência = aluno escolheu o manual → skip com AVISO (não erro), sem sobrescrever.
+          if [ -n "${GATEWAY_SHARED_SECRET:-}" ]; then
+            SECRET_ARGS+=( "gateway-secret=${GATEWAY_SHARED_SECRET}" ); ENV_ARGS+=( "GATEWAY_SHARED_SECRET=secretref:gateway-secret" )
+          else
+            echo "::warning::GATEWAY_SHARED_SECRET não definido como secret do fork — assumindo o caminho MANUAL (App Setting no Portal, guia Fase 3.3 / 4.2). Se você NÃO o configurou manualmente, o X-Gateway-Key ficará desarmado."
+          fi
+          # Aplica só os secrets/env-vars presentes. No caminho COFRE puro o SECRET_ARGS pode
+          # ficar VAZIO — expandir "${SECRET_ARGS[@]}" com `set -u` estouraria e o az falharia
+          # sem --secrets; por isso guardamos ambos os blocos com a contagem do array.
+          if [ ${#SECRET_ARGS[@]} -gt 0 ]; then
+            az containerapp secret set \
+              --name "$MCP_APP_NAME" --resource-group "$RG" \
+              --secrets "${SECRET_ARGS[@]}"
+          fi
+          if [ ${#ENV_ARGS[@]} -gt 0 ]; then
+            az containerapp update \
+              --name "$MCP_APP_NAME" --resource-group "$RG" \
+              --set-env-vars "${ENV_ARGS[@]}"
+          fi
+
+      - name: '[mcp-server] Smoke — revisão provisionada (ingress interno; sem curl público)'
+        # O McpServer tem ingress INTERNO (só o gateway no mesmo CAE o alcança) — não há
+        # endereço público para o runner sondar /health. Validamos que a revisão ativa
+        # provisionou com sucesso. O smoke funcional (tools/list = 7 via gateway com Bearer)
+        # é manual na Fase 12 do guia.
+        if: ${{ inputs.acao == 'tudo' || inputs.acao == 'mcp-server' }}
+        env:
+          MCP_APP_NAME: ${{ inputs.mcp_app_name || vars.PHASE05_MCP_APP_NAME }}
+        run: |
+          set -euo pipefail
+          RG="${{ inputs.resource_group || vars.PHASE02_RESOURCE_GROUP || env.DEFAULT_RESOURCE_GROUP }}"
+          echo "Poll da revisão ativa (até ~60s: 6 tentativas x 10s)..."
+          ok=""
+          for i in $(seq 1 6); do
+            PROV=$(az containerapp revision list \
+              --name "$MCP_APP_NAME" --resource-group "$RG" \
+              --query "[?properties.active].properties.provisioningState | [0]" -o tsv || true)
+            RUN=$(az containerapp revision list \
+              --name "$MCP_APP_NAME" --resource-group "$RG" \
+              --query "[?properties.active].properties.runningState | [0]" -o tsv || true)
+            echo "tentativa $i/6: provisioningState=${PROV:-?} runningState=${RUN:-?}"
+            if [ "$PROV" = "Provisioned" ] && [ "$RUN" = "Running" ]; then ok=1; break; fi
+            sleep 10
+          done
+          if [ -z "$ok" ]; then
+            echo "::error::McpServer: revisão ativa não ficou Provisioned/Running no tempo esperado."
+            exit 1
+          fi
+          echo "Smoke OK — McpServer (interno) com revisão Provisioned + Running."
+
+      # =========================================================
+      # BLOCO 3 — GATEWAY YARP  (acao = tudo | gateway)
+      #   Rebuild do Gateway a partir desta branch (lab-a-final) para armar o hardening:
+      #   X-Gateway-Key também no cluster mcp-server (ADE-009) + leitura de FlowEventsUrl.
+      #   As App Settings (McpServerUrl / FlowEventsUrl / Gateway__AdminSharedSecret) são
+      #   criadas à mão no Portal (guia Fase 4.1 e Fase 8) e permanecem.
+      #   Origem: deploy-phase-02.yml + smoke fail-closed de lab-quartas-de-final.yml.
+      # =========================================================
+      - name: '[gateway] Setup .NET'
+        if: ${{ inputs.acao == 'tudo' || inputs.acao == 'gateway' }}
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: '[gateway] Restore'
+        if: ${{ inputs.acao == 'tudo' || inputs.acao == 'gateway' }}
+        run: dotnet restore ${{ env.GATEWAY_PROJECT_PATH }}
+
+      - name: '[gateway] Build'
+        if: ${{ inputs.acao == 'tudo' || inputs.acao == 'gateway' }}
+        run: dotnet build ${{ env.GATEWAY_PROJECT_PATH }} -c Release --no-restore
+
+      - name: '[gateway] Test'
+        # SEM --no-build (lição do gate S2.1 / H-1): o dotnet test faz restore+build do
+        # projeto de testes E da dependência Fifa2026.V2.Gateway em Release.
+        if: ${{ inputs.acao == 'tudo' || inputs.acao == 'gateway' }}
+        run: dotnet test ${{ env.GATEWAY_TEST_PATH }} -c Release --verbosity normal
+
+      - name: '[gateway] Azure login (Service Principal)'
+        if: ${{ inputs.acao == 'tudo' || inputs.acao == 'gateway' }}
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: '[gateway] ACR login'
+        if: ${{ inputs.acao == 'tudo' || inputs.acao == 'gateway' }}
+        run: az acr login --name ${{ vars.ACR_LOGIN_SERVER }}
+
+      - name: '[gateway] Build & push Docker image'
+        if: ${{ inputs.acao == 'tudo' || inputs.acao == 'gateway' }}
+        run: |
+          set -euo pipefail
+          IMAGE_TAG="${{ vars.ACR_LOGIN_SERVER }}/${{ env.GATEWAY_IMAGE_NAME }}:${{ github.sha }}"
+          docker build -t "$IMAGE_TAG" "${{ env.GATEWAY_PROJECT_PATH }}"
+          docker push "$IMAGE_TAG"
+          echo "GATEWAY_IMAGE_TAG=$IMAGE_TAG" >> "$GITHUB_ENV"
+
+      - name: '[gateway] Deploy Container App'
+        if: ${{ inputs.acao == 'tudo' || inputs.acao == 'gateway' }}
+        env:
+          CONTAINERAPP_NAME: ${{ inputs.containerapp_name || vars.PHASE02_CONTAINERAPP_NAME }}
+        run: |
+          set -euo pipefail
+          RG="${{ inputs.resource_group || vars.PHASE02_RESOURCE_GROUP || env.DEFAULT_RESOURCE_GROUP }}"
+          az containerapp update \
+            --name "$CONTAINERAPP_NAME" \
+            --resource-group "$RG" \
+            --image "$GATEWAY_IMAGE_TAG"
+
+      - name: '[gateway] Smoke test — 401 sem token + /health 200'
+        if: ${{ inputs.acao == 'tudo' || inputs.acao == 'gateway' }}
+        env:
+          CONTAINERAPP_NAME: ${{ inputs.containerapp_name || vars.PHASE02_CONTAINERAPP_NAME }}
+        run: |
+          set -euo pipefail
+          RG="${{ inputs.resource_group || vars.PHASE02_RESOURCE_GROUP || env.DEFAULT_RESOURCE_GROUP }}"
+          echo "Resolvendo FQDN do Container App..."
+          FQDN=$(az containerapp show \
+            --name "$CONTAINERAPP_NAME" \
+            --resource-group "$RG" \
+            --query properties.configuration.ingress.fqdn -o tsv)
+          echo "Aguardando warmup (cold start scale-to-zero)..."
+          sleep 20
+          # Sem Bearer → 401 (gateway fail-closed valida JWT CIAM/Admin). Validamos o código.
+          CODE=$(curl -s -o /dev/null -w '%{http_code}' "https://${FQDN}/purchase" \
+            -X POST -H "Content-Type: application/json" \
+            -d '{"matchId":1,"category":"VIP","userId":1,"quantity":1}')
+          echo "POST /purchase sem token → HTTP $CODE (esperado 401)."
+          test "$CODE" = "401"
+          # Health probe deve responder 200 (rota anônima).
+          curl -fsS "https://${FQDN}/health" | tee health.json
+          echo "Smoke test OK — 401 sem token + /health 200."
+
+      # =========================================================
+      # BLOCO 4 — FLOW-EVENTS  (acao = tudo | flow-events)
+      #   FlowEvents .NET (Azure.Monitor.Query via Kusto + Microsoft.Azure.SignalR — FlowHub).
+      #   Imagem no ACR + App Settings: AzureSignalRConnectionString (secretref),
+      #   LogAnalyticsWorkspaceId, FrontendOrigin. Ingress EXTERNO/WebSocket → smoke /health público.
+      #   NÃO recebe GATEWAY_SHARED_SECRET (fora do escopo da ADE-009 Inv 1 — guia Fase 7.4).
+      #   Origem: deploy-phase-06.yml (job deploy-flow-events).
+      # =========================================================
+      - name: '[flow-events] Setup .NET'
+        if: ${{ inputs.acao == 'tudo' || inputs.acao == 'flow-events' }}
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: '[flow-events] Restore'
+        if: ${{ inputs.acao == 'tudo' || inputs.acao == 'flow-events' }}
+        run: dotnet restore ${{ env.FLOW_PROJECT_PATH }}
+
+      - name: '[flow-events] Build'
+        if: ${{ inputs.acao == 'tudo' || inputs.acao == 'flow-events' }}
+        run: dotnet build ${{ env.FLOW_PROJECT_PATH }} -c Release --no-restore
+
+      - name: '[flow-events] Test'
+        # SEM --no-build (lição do gate S2.1 / H-1): o dotnet test faz restore+build do
+        # projeto de testes E da dependência Fifa2026.V2.FlowEvents em Release.
+        if: ${{ inputs.acao == 'tudo' || inputs.acao == 'flow-events' }}
+        run: dotnet test ${{ env.FLOW_TEST_PATH }} -c Release --verbosity normal
+
+      - name: '[flow-events] Azure login (Service Principal)'
+        if: ${{ inputs.acao == 'tudo' || inputs.acao == 'flow-events' }}
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: '[flow-events] ACR login'
+        if: ${{ inputs.acao == 'tudo' || inputs.acao == 'flow-events' }}
+        run: az acr login --name ${{ vars.ACR_LOGIN_SERVER }}
+
+      - name: '[flow-events] Build & push Docker image'
+        if: ${{ inputs.acao == 'tudo' || inputs.acao == 'flow-events' }}
+        run: |
+          set -euo pipefail
+          IMAGE_TAG="${{ vars.ACR_LOGIN_SERVER }}/${{ env.FLOW_IMAGE_NAME }}:${{ github.sha }}"
+          docker build -t "$IMAGE_TAG" "${{ env.FLOW_PROJECT_PATH }}"
+          docker push "$IMAGE_TAG"
+          echo "FLOW_IMAGE_TAG=$IMAGE_TAG" >> "$GITHUB_ENV"
+
+      - name: '[flow-events] Deploy Container App + App Settings'
+        if: ${{ inputs.acao == 'tudo' || inputs.acao == 'flow-events' }}
+        env:
+          FLOW_APP_NAME: ${{ inputs.flow_app_name || vars.PHASE06_FLOW_APP_NAME }}
+          SIGNALR_CONNECTION_STRING: ${{ secrets.PHASE06_SIGNALR_CONNECTION_STRING }}
+          LOG_ANALYTICS_WORKSPACE_ID: ${{ vars.PHASE06_LOG_ANALYTICS_WORKSPACE_ID }}
+          FRONTEND_ORIGIN: ${{ vars.PHASE06_FRONTEND_ORIGIN }}
+        run: |
+          set -euo pipefail
+          RG="${{ inputs.resource_group || vars.PHASE02_RESOURCE_GROUP || env.DEFAULT_RESOURCE_GROUP }}"
+          # Atualiza a imagem.
+          az containerapp update \
+            --name "$FLOW_APP_NAME" \
+            --resource-group "$RG" \
+            --image "$FLOW_IMAGE_TAG"
+          # Secret sensível (connection string do SignalR): o FlowHub é hospedado pelo próprio
+          # FlowEvents (AddAzureSignalR). Três vias:
+          #  1) fork secret PREENCHIDO → aplica inline (protege quem NÃO fez o caminho cofre);
+          #  2) fork secret VAZIO + 'azure-signalr-conn' JÁ existe (caminho COFRE, Key Vault
+          #     reference no Portal) → NÃO sobrescreve a blindagem;
+          #  3) fork secret VAZIO + secret ausente → erro claro (nenhuma das duas vias configurada).
+          if [ -n "${SIGNALR_CONNECTION_STRING:-}" ]; then
+            az containerapp secret set \
+              --name "$FLOW_APP_NAME" --resource-group "$RG" \
+              --secrets "azure-signalr-conn=${SIGNALR_CONNECTION_STRING}"
+          else
+            SIGNALR_SECRET_EXISTS=$(az containerapp secret list \
+              --name "$FLOW_APP_NAME" --resource-group "$RG" \
+              --query "[?name=='azure-signalr-conn'] | length(@)" -o tsv)
+            if [ "${SIGNALR_SECRET_EXISTS:-0}" -ge 1 ]; then
+              echo "::notice::Caminho COFRE detectado — secret 'azure-signalr-conn' já existe no Container App (Key Vault reference). A blindagem NÃO será sobrescrita; o env var AzureSignalRConnectionString continua apontando pra ele."
+            else
+              echo "::error::PHASE06_SIGNALR_CONNECTION_STRING vazio E o secret 'azure-signalr-conn' não existe no Container App — configure um dos dois (fork secret INLINE ou Key Vault reference no Portal)."
+              exit 1
+            fi
+          fi
+          # Env vars (secretref p/ a connection string; valores não sensíveis diretos).
+          # O AzureSignalRConnectionString aponta pro secret 'azure-signalr-conn' independentemente
+          # da via (inline ou cofre) — idempotente, sempre reaplicado.
+          az containerapp update \
+            --name "$FLOW_APP_NAME" --resource-group "$RG" \
+            --set-env-vars \
+              "AzureSignalRConnectionString=secretref:azure-signalr-conn" \
+              "LogAnalyticsWorkspaceId=${LOG_ANALYTICS_WORKSPACE_ID}" \
+              "FrontendOrigin=${FRONTEND_ORIGIN}"
+
+      - name: '[flow-events] Smoke test (/health do FlowEvents)'
+        if: ${{ inputs.acao == 'tudo' || inputs.acao == 'flow-events' }}
+        env:
+          FLOW_APP_NAME: ${{ inputs.flow_app_name || vars.PHASE06_FLOW_APP_NAME }}
+        run: |
+          set -euo pipefail
+          RG="${{ inputs.resource_group || vars.PHASE02_RESOURCE_GROUP || env.DEFAULT_RESOURCE_GROUP }}"
+          FQDN=$(az containerapp show \
+            --name "$FLOW_APP_NAME" --resource-group "$RG" \
+            --query properties.configuration.ingress.fqdn -o tsv)
+          echo "Aguardando warmup (cold start scale-to-zero)..."
+          sleep 20
+          curl -fsS "https://${FQDN}/health" | tee health.json
+          jq -e '.status == "healthy"' health.json
+          echo "Smoke test OK — FlowEvents healthy."
+
+      # =========================================================
+      # BLOCO 5 — FRONTEND  (acao = tudo | frontend)
+      #   Build ÚNICO do frontend (Vite) com o chatbot (F5) E a rota /flow (F6) embutidos.
+      #   VITE_* do gateway/proxy/provider/model (chatbot) + VITE_FLOW_EVENTS_BASE_URL (/flow).
+      #   Guard: nenhuma API key de LLM pode vazar no bundle (a key fica só no proxy server-side).
+      #   Origem: fusão dos jobs deploy-frontend de phase-05 (chatbot + guard) e phase-06 (/flow).
+      # =========================================================
+      - name: '[frontend] Setup Node.js'
+        if: ${{ inputs.acao == 'tudo' || inputs.acao == 'frontend' }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: ${{ env.FRONTEND_WORKING_DIR }}/package-lock.json
+
+      - name: '[frontend] Install dependencies (npm ci)'
+        if: ${{ inputs.acao == 'tudo' || inputs.acao == 'frontend' }}
+        working-directory: ${{ env.FRONTEND_WORKING_DIR }}
+        run: npm ci
+
+      - name: '[frontend] Lint'
+        if: ${{ inputs.acao == 'tudo' || inputs.acao == 'frontend' }}
+        working-directory: ${{ env.FRONTEND_WORKING_DIR }}
+        run: npm run lint
+
+      - name: '[frontend] Build (vite) — chatbot (F5) + rota /flow (F6) embutidos'
+        # CRÍTICO (retro-compat Quartas): a Final REUSA o MESMO Web App de frontend das
+        # Quartas — o bundle é UM só. Este env-block precisa carregar TODAS as VITE_* das
+        # Quartas (login CIAM + admin workforce + compra v2) ALÉM das novas de F5/F6; sem
+        # elas, `acao=frontend` publicaria um bundle que quebra login e compra (authV2.ts
+        # faz `?? ''`; Checkout.tsx usa a PRESENÇA de VITE_FUNCTION_V2_URL como interruptor
+        # do fluxo v2). Os nomes das vars reusadas são os do lab das Quartas (o aluno já as
+        # tem no fork); onde a Final documentou um nome prefixado diferente, aceitamos ambos.
+        if: ${{ inputs.acao == 'tudo' || inputs.acao == 'frontend' }}
+        working-directory: ${{ env.FRONTEND_WORKING_DIR }}
+        env:
+          # --- BASELINE herdado das Quartas (sem isto, login CIAM + compra v2 quebram) ---
+          # Identidade CLIENTE via CIAM (ADE-007 Inv 1/2) + ADMIN workforce via Entra (App Role).
+          VITE_CIAM_AUTHORITY: ${{ vars.VITE_CIAM_AUTHORITY }}
+          VITE_CIAM_CLIENT_ID: ${{ vars.VITE_CIAM_CLIENT_ID }}
+          VITE_ADMIN_TENANT_ID: ${{ vars.VITE_ADMIN_TENANT_ID }}
+          VITE_ADMIN_CLIENT_ID: ${{ vars.VITE_ADMIN_CLIENT_ID }}
+          VITE_ADMIN_SCOPE: ${{ vars.VITE_ADMIN_SCOPE }}
+          # Backend v1 same-origin + compra v2 async (a PRESENÇA de VITE_FUNCTION_V2_URL liga o v2).
+          BACKEND_URL: ${{ vars.BACKEND_URL }}
+          VITE_API_URL: /api
+          VITE_FUNCTION_V2_URL: ${{ vars.VITE_FUNCTION_V2_URL || vars.FUNCTION_V2_URL }}
+          # Gateway YARP — aceita o nome das Quartas (GATEWAY_V2_URL) OU o prefixado da Final.
+          VITE_GATEWAY_V2_URL: ${{ vars.VITE_GATEWAY_V2_URL || vars.GATEWAY_V2_URL }}
+          # --- NOVO na Final ---
+          # F5 — chatbot: proxy/provider/model. NUNCA a key da LLM (fica server-side). Proxy = gateway.
+          VITE_LLM_PROXY_URL: ${{ vars.VITE_LLM_PROXY_URL || vars.VITE_GATEWAY_V2_URL || vars.GATEWAY_V2_URL }}
+          VITE_LLM_PROVIDER: ${{ vars.VITE_LLM_PROVIDER }}
+          VITE_GEMINI_MODEL: ${{ vars.VITE_GEMINI_MODEL }}
+          # F6 — rota /flow: base das rotas FlowEvents via gateway (= ${VITE_GATEWAY_V2_URL}/flow-events).
+          VITE_FLOW_EVENTS_BASE_URL: ${{ vars.VITE_FLOW_EVENTS_BASE_URL }}
+        run: |
+          set -euo pipefail
+          # Fail-fast: os dois interruptores que, VAZIOS, produzem um bundle silenciosamente
+          # quebrado (authV2.ts faz `?? ''` → login CIAM morto; Checkout.tsx usa a PRESENÇA de
+          # VITE_FUNCTION_V2_URL como interruptor do fluxo v2 → compra some). Sem isto o build
+          # passaria verde publicando um front sem login/compra.
+          if [ -z "${VITE_CIAM_CLIENT_ID:-}" ] || [ -z "${VITE_FUNCTION_V2_URL:-}" ]; then
+            echo "::error::VITE_CIAM_CLIENT_ID e/ou VITE_FUNCTION_V2_URL vazios — o bundle sairia com login CIAM e/ou compra v2 mortos. Recrie as Variables das Quartas NESTE fork (ver nota de pré-requisito da Fase 10 do guia: docs/runbooks/final-portal-guide.md)."
+            exit 1
+          fi
+          # Story 4.6 (Diploma vivo) — hora do deploy INJETADA NO BUILD (infalsificável: nasce
+          # no runner do CI, nunca no navegador do aluno — AC-3). Vite expõe VITE_* de process.env.
+          export VITE_BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          npm run build
+
+      - name: '[frontend] Guard — nenhuma API key de LLM vazou no bundle'
+        if: ${{ inputs.acao == 'tudo' || inputs.acao == 'frontend' }}
+        working-directory: ${{ env.FRONTEND_WORKING_DIR }}
+        run: |
+          set -euo pipefail
+          # Heurística defensiva: keys de provider têm prefixos conhecidos.
+          # gsk_ (Groq), AIza (Google), e nomes de App Setting não podem aparecer no JS.
+          if grep -rqE 'gsk_[A-Za-z0-9]|AIza[0-9A-Za-z_-]{20,}|GEMINI_API_KEY|GROQ_API_KEY|MISTRAL_API_KEY' dist/assets/*.js; then
+            echo "::error::Possível API key de LLM no bundle — a key deve ficar SOMENTE no proxy server-side."
+            exit 1
+          fi
+          echo "Guard OK — nenhuma key de LLM no bundle."
+
+      - name: '[frontend] Deploy to Azure Web App'
+        if: ${{ inputs.acao == 'tudo' || inputs.acao == 'frontend' }}
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ inputs.frontend_app_name || vars.FRONTEND_APP_NAME }}
+          publish-profile: ${{ secrets.AZURE_FRONTEND_PUBLISH_PROFILE }}
+          package: '${{ env.FRONTEND_WORKING_DIR }}/dist'

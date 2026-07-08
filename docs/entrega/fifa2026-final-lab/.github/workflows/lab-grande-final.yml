@@ -1,0 +1,525 @@
+name: Lab Grande Final — Entrega (1 campo + 1 secret)
+
+# Workflow ÚNICO do Template Repository `fifa2026-final-lab` (org TFTEC).
+# Modelo de entrega da Grande Final (EPIC-004 Frente C / Story 4.5): o aluno cria o
+# repo próprio via "Use this template" (NÃO fork — mata a classe de bugs de merge),
+# edita 1 linha (`sufixo` em lab.config.json), configura 1 secret (AZURE_CREDENTIALS)
+# e roda `acao=check` (Doctor pré-flight) antes de `acao=tudo`.
+#
+# COLAPSO 15 vars + 5 secrets → 1 campo + 1 secret (Story 4.5 Dev Notes, mapa 15→1):
+#   - 7 nomes de recurso  → DERIVADOS do `sufixo` por convenção fixa (jq → $GITHUB_ENV)
+#   - 3 URLs              → CONSULTADAS in-run (az ... --query), nunca hardcoded (AC-5)
+#   - 5 vars de identidade→ LIDAS dos App Settings do frontend existente (AC-6/[AUTO-DECISION])
+#   - SQL_CONNECTION_STRING → ELIMINADO (MI-AAD, Story 4.1)
+#   - 2 publish profiles  → ELIMINADOS (deploy via AZURE_CREDENTIALS / az webapp deploy)
+#   - GATEWAY_SHARED_SECRET + LLM keys → SÓ no Key Vault (KV reference + Managed Identity)
+#   - AZURE_CREDENTIALS   → o ÚNICO GitHub Secret (AC-7)
+#
+# CONVENÇÃO DE NOMES (contrato com o pré-provisionamento browser-harness do instrutor,
+# Story 4.5 Task 5 / runbook do @analyst): TODO recurso é nomeado `<prefixo>-<sufixo>`.
+# Estende a convenção já validada das Quartas (cr<sufixo>/cae-<sufixo>/ca-gateway-<sufixo>,
+# quartas-f2-portal-guide.md L66-68). O instrutor DEVE provisionar com estes nomes.
+#
+# ZERO `az create`/`provision` (AC-9): a topologia (VNet, CAE, PE, Key Vault, MIs) é
+# pré-provisionada pelo instrutor. Aqui só build + deploy de código + leitura (az ... show).
+#
+# Disparo MANUAL apenas. Padrão `acao`-guardado (sem `needs`), herdado de lab-a-final.yml
+# / lab-quartas-de-final.yml. `acao=check` NÃO faz parte de `tudo` (é pré-flight separado).
+# Ordem do `tudo`: function → mcp-server → gateway → flow-events → frontend. A Function F1 é a
+# base v2 (compra async + GET /api/v2/me = MeFunction do JIT CIAM, Story 3.5) e é redeployada
+# PRIMEIRO — o frontend/gateway chamam /api/v2/me, que um deploy velho da F1 não teria (→ 404).
+#
+# Único GitHub Secret exigido: AZURE_CREDENTIALS (JSON do Service Principal da turma).
+
+on:
+  workflow_dispatch:
+    inputs:
+      acao:
+        description: 'O que executar (rode check ANTES de tudo)'
+        type: choice
+        required: true
+        default: 'check'
+        options:
+          - check
+          - tudo
+          - function
+          - mcp-server
+          - flow-events
+          - gateway
+          - frontend
+      sufixo:
+        description: '(opcional) override do sufixo — normalmente vem de lab.config.json'
+        required: false
+
+env:
+  DOTNET_VERSION: '8.0.x'
+  NODE_VERSION: '20'
+  FUNCTION_PROJECT_PATH: 'src/Fifa2026.V2.Functions'
+  FUNCTION_TEST_PATH: 'src/Fifa2026.V2.Functions.Tests'
+  MCP_PROJECT_PATH: 'src/Fifa2026.V2.McpServer'
+  MCP_TEST_PATH: 'src/Fifa2026.V2.McpServer.Tests'
+  FLOW_PROJECT_PATH: 'src/Fifa2026.V2.FlowEvents'
+  FLOW_TEST_PATH: 'src/Fifa2026.V2.FlowEvents.Tests'
+  GATEWAY_PROJECT_PATH: 'src/Fifa2026.V2.Gateway'
+  GATEWAY_TEST_PATH: 'src/Fifa2026.V2.Gateway.Tests'
+  FRONTEND_WORKING_DIR: 'Lovable/World Cup Tickets Hub'
+
+jobs:
+  lab:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # =========================================================
+      # RESOLUÇÃO in-run do lab.config.json (roda para TODOS os acao) — AC-4.
+      # 1 campo (`sufixo`) → todos os nomes de recurso por convenção fixa.
+      # Elimina INTEIRAMENTE a camada de GitHub Variables (aluno cria ZERO vars).
+      # =========================================================
+      - name: 'Resolver lab.config.json (sufixo → nomes derivados)'
+        run: |
+          set -euo pipefail
+          SUFIXO="${{ inputs.sufixo }}"
+          if [ -z "$SUFIXO" ]; then
+            if [ ! -f lab.config.json ]; then
+              echo "::error::lab.config.json ausente na raiz do repo. Edite o campo 'sufixo'."; exit 1
+            fi
+            # `2>/dev/null || true`: se lab.config.json estiver com JSON malformado, o jq sai != 0
+            # e o `set -e` mataria o step ANTES do erro amigável abaixo. Com o fallback, SUFIXO fica
+            # vazio e o guard `if [ -z "$SUFIXO" ]` emite a mensagem amigável (sempre sai).
+            SUFIXO=$(jq -r '.sufixo // empty' lab.config.json 2>/dev/null || true)
+          fi
+          if [ -z "$SUFIXO" ] || [ "$SUFIXO" = "null" ] || [ "$SUFIXO" = "suasiniciais" ]; then
+            echo "::error::campo 'sufixo' não preenchido em lab.config.json (valor placeholder ou vazio)."; exit 1
+          fi
+          # ACR só aceita letras/números (quartas-f2-portal-guide.md L54); a convenção inteira segue.
+          if ! echo "$SUFIXO" | grep -qE '^[a-z0-9]+$'; then
+            echo "::error::'sufixo' deve ser só letras minúsculas e números (restrição do ACR): '$SUFIXO'."; exit 1
+          fi
+          {
+            echo "SUFIXO=$SUFIXO"
+            echo "RG=rg-$SUFIXO"
+            echo "ACR_NAME=cr$SUFIXO"
+            echo "ACR_LOGIN_SERVER=cr$SUFIXO.azurecr.io"
+            echo "CAE_NAME=cae-$SUFIXO"
+            echo "GATEWAY_APP=ca-gateway-$SUFIXO"
+            echo "MCP_APP=ca-mcp-$SUFIXO"
+            echo "FLOW_APP=ca-flow-$SUFIXO"
+            echo "FRONTEND_APP=app-frontend-$SUFIXO"
+            echo "BACKEND_APP=app-backend-$SUFIXO"
+            echo "FUNCTION_APP=func-f1-$SUFIXO"
+            echo "SQL_SERVER=sql-$SUFIXO"
+            echo "KEYVAULT=kv-$SUFIXO"
+          } >> "$GITHUB_ENV"
+          echo "Sufixo resolvido: $SUFIXO — todos os nomes derivados por convenção <prefixo>-$SUFIXO."
+
+      - name: 'Azure login (Service Principal da turma — único secret)'
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      # =========================================================
+      # acao=check — DOCTOR PRÉ-FLIGHT (READ-ONLY) — AC-12.
+      #   Consome o checklist da Story 4.4 (docs/runbooks/deploy-preflight-checklist.md):
+      #   8 checks: 5 gotchas + a invariante de perímetro (@architect) + smoke KV/MI + VITE_* de identidade.
+      #   NENHUM az set/update/create — só az ... show/list/--query. Resultado no job summary.
+      #   NÃO faz parte de `tudo` — o aluno roda check ANTES de tudo.
+      # =========================================================
+      - name: '[check] Doctor pré-flight (READ-ONLY) — 8 checks: 5 gotchas + invariante + KV/MI + VITE_*'
+        if: ${{ inputs.acao == 'check' }}
+        run: |
+          # NÃO usar `set -e`: queremos coletar TODOS os itens, não abortar no 1º FAIL.
+          set -uo pipefail
+          FAILED=0
+          S() { echo "$1" >> "$GITHUB_STEP_SUMMARY"; }
+          S "## Doctor pré-flight — \`acao=check\` (read-only)"
+          S ""
+          S "Sufixo: \`$SUFIXO\` · RG: \`$RG\` · Gateway: \`$GATEWAY_APP\`"
+          S ""
+          S "| # | Item (fonte: deploy-preflight-checklist.md) | Resultado |"
+          S "|---|------|-----------|"
+          item() { # $1=num $2=label $3=pass(0/1) $4=detalhe(FAIL)
+            if [ "$3" = "0" ]; then S "| $1 | $2 | ✅ PASS |";
+            else S "| $1 | $2 | ❌ FAIL — $4 |"; FAILED=$((FAILED+1)); fi
+          }
+          # appId do SP autenticado (para checar RBAC) — nunca imprime segredo.
+          SP_APPID=$(az account show --query user.name -o tsv 2>/dev/null || true)
+
+          # 1 — RBAC do SP no RG do gateway
+          ROLES=$(az role assignment list --assignee "$SP_APPID" --resource-group "$RG" \
+            --query "[].roleDefinitionName" -o tsv 2>/dev/null || true)
+          if [ -n "$ROLES" ]; then item 1 "RBAC do SP no RG \`$RG\`" 0; \
+            else item 1 "RBAC do SP no RG \`$RG\`" 1 "nenhum role assignment p/ o SP"; fi
+
+          # 2 — ACR conectado nos Registries do gateway
+          REGS=$(az containerapp show -n "$GATEWAY_APP" -g "$RG" \
+            --query "properties.configuration.registries[].server" -o tsv 2>/dev/null || true)
+          if echo "$REGS" | grep -qi "$ACR_LOGIN_SERVER"; then item 2 "ACR conectado (\`$ACR_LOGIN_SERVER\`)" 0; \
+            else item 2 "ACR conectado" 1 "registries não contém $ACR_LOGIN_SERVER"; fi
+
+          # 3 — ingress.targetPort = 8080 (o gotcha de maior recorrência)
+          PORT=$(az containerapp show -n "$GATEWAY_APP" -g "$RG" \
+            --query "properties.configuration.ingress.targetPort" -o tsv 2>/dev/null || true)
+          if [ "$PORT" = "8080" ]; then item 3 "ingress.targetPort = 8080" 0; \
+            else item 3 "ingress.targetPort = 8080" 1 "valor atual: ${PORT:-ausente}"; fi
+
+          # 4 — health probes na 8080 (ou nenhum probe configurado)
+          PROBE_PORTS=$(az containerapp show -n "$GATEWAY_APP" -g "$RG" \
+            --query "properties.template.containers[0].probes[].httpGet.port" -o tsv 2>/dev/null || true)
+          if [ -z "$PROBE_PORTS" ] || ! echo "$PROBE_PORTS" | grep -qv '^8080$'; then \
+            item 4 "health probes na 8080 (ou nenhum)" 0; \
+            else item 4 "health probes na 8080" 1 "probe(s) em porta ≠ 8080: $PROBE_PORTS"; fi
+
+          # 5 — nome do segredo X-Gateway-Key (só PRESENÇA do nome, NUNCA o valor)
+          GW_SEC=$(az containerapp show -n "$GATEWAY_APP" -g "$RG" \
+            --query "properties.template.containers[0].env[?name=='Gateway__AdminSharedSecret'].name | [0]" -o tsv 2>/dev/null || true)
+          BK_SEC=$(az webapp config appsettings list -n "$BACKEND_APP" -g "$RG" \
+            --query "[?name=='GATEWAY_SHARED_SECRET'].name | [0]" -o tsv 2>/dev/null || true)
+          if [ -n "$GW_SEC" ] && [ -n "$BK_SEC" ]; then \
+            item 5 "segredo X-Gateway-Key presente (gateway + backend)" 0; \
+            else item 5 "segredo X-Gateway-Key" 1 "gateway:${GW_SEC:-ausente} backend:${BK_SEC:-ausente}"; fi
+
+          # 6 — invariante de perímetro (@architect): o ingress do CAE é a única borda do gateway
+          EXTERNAL=$(az containerapp show -n "$GATEWAY_APP" -g "$RG" \
+            --query "properties.configuration.ingress.external" -o tsv 2>/dev/null || true)
+          if [ -n "$EXTERNAL" ]; then item 6 "ingress do gateway é a borda (premissa do ForwardLimit=1)" 0; \
+            else item 6 "ingress do gateway" 1 "ingress não encontrado"; fi
+
+          # 7 — KV/MI smoke: a Managed Identity resolve secret(s) via KV reference, revisão Running.
+          #     Consulta SÓ metadados (nome do secret + estado) — NUNCA o valor do secret.
+          KVREFS=$(az containerapp show -n "$MCP_APP" -g "$RG" \
+            --query "properties.configuration.secrets[?keyVaultUrl].name" -o tsv 2>/dev/null || true)
+          REV_STATE=$(az containerapp revision list -n "$MCP_APP" -g "$RG" \
+            --query "[?properties.active].properties.runningState | [0]" -o tsv 2>/dev/null || true)
+          if [ -n "$KVREFS" ] && [ "$REV_STATE" = "Running" ]; then \
+            item 7 "KV/MI: secret(s) via KV reference resolvido(s) (revisão Running)" 0; \
+            else item 7 "KV/MI reference (Story 4.1)" 1 "kvrefs:${KVREFS:-nenhum} rev:${REV_STATE:-?}"; fi
+
+          # 8 — VITE_* de identidade presentes no App Settings do frontend (dependência do instrutor,
+          #     AC-6 / runbook Bloco 4). O bloco `frontend` LÊ essas 5 daqui (L~356) → um check "todos
+          #     PASS" sem elas ainda quebraria o `acao=tudo`. Confere só a PRESENÇA do NOME — NUNCA
+          #     ecoa valores (mantém o padrão do Doctor; e são identificadores OIDC públicos).
+          FE_SETTINGS=$(az webapp config appsettings list -n "$FRONTEND_APP" -g "$RG" \
+            --query "[].name" -o tsv 2>/dev/null || true)
+          VITE_MISSING=""
+          for v in VITE_CIAM_AUTHORITY VITE_CIAM_CLIENT_ID VITE_ADMIN_TENANT_ID VITE_ADMIN_CLIENT_ID VITE_ADMIN_SCOPE; do
+            if ! echo "$FE_SETTINGS" | grep -qx "$v"; then VITE_MISSING="$VITE_MISSING $v"; fi
+          done
+          if [ -z "$VITE_MISSING" ]; then \
+            item 8 "VITE_* de identidade no frontend (\`$FRONTEND_APP\`)" 0; \
+            else item 8 "VITE_* de identidade no frontend" 1 "ausente(s):${VITE_MISSING} — o instrutor deve semeá-las (runbook browser-harness Bloco 4)"; fi
+
+          S ""
+          if [ "$FAILED" -gt 0 ]; then
+            S "**Resultado: ❌ $FAILED item(ns) FAIL — corrija antes de \`acao=tudo\`.**"
+            echo "::error::Doctor: $FAILED item(ns) FAIL — veja o job summary."
+            exit 1
+          fi
+          S "**Resultado: ✅ TODOS PASS — ambiente pronto para \`acao=tudo\`.**"
+          echo "Doctor: todos os itens PASS."
+
+      # =========================================================
+      # Setup .NET (compartilhado pelos blocos .NET: function, mcp-server, gateway, flow-events, tudo).
+      # =========================================================
+      - name: 'Setup .NET'
+        if: ${{ inputs.acao == 'tudo' || inputs.acao == 'function' || inputs.acao == 'mcp-server' || inputs.acao == 'gateway' || inputs.acao == 'flow-events' }}
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: 'ACR login (blocos de imagem)'
+        if: ${{ inputs.acao == 'tudo' || inputs.acao == 'mcp-server' || inputs.acao == 'gateway' || inputs.acao == 'flow-events' }}
+        run: az acr login --name "$ACR_NAME"
+
+      # =========================================================
+      # BLOCO function (F1)  (acao = tudo | function) — redeploy da Azure Function F1.
+      #   Republica o CÓDIGO ATUAL da F1 (base v2: compra async + GET /api/v2/me = o MeFunction
+      #   do JIT CIAM, Story 3.5). A App `func-f1-$SUFIXO` já existe (pré-provisionada, ZERO
+      #   `az create` — AC-9); um deploy velho não teria a rota v2/me → 404 → quebra a compra do
+      #   cliente nato-CIAM (a feature-estrela). Superset ADITIVO (mantém Purchase*). O bloco NÃO
+      #   toca os secrets/config herdados — Sql/ServiceBus/GATEWAY_SHARED_SECRET vêm do Key Vault
+      #   (KV reference + MI) e são preservados pelo zip-deploy (o functions-action pode gerenciar
+      #   só o WEBSITE_RUN_FROM_PACKAGE, o setting de MODO de deploy). SEM ACR (a Function não usa
+      #   imagem). Deploy via AZURE_CREDENTIALS (sessão az global) — sem publish profile (AC-7).
+      # =========================================================
+      - name: '[function] Build + Test'
+        if: ${{ inputs.acao == 'tudo' || inputs.acao == 'function' }}
+        run: |
+          set -euo pipefail
+          dotnet restore "${{ env.FUNCTION_PROJECT_PATH }}"
+          dotnet build "${{ env.FUNCTION_PROJECT_PATH }}" -c Release --no-restore
+          dotnet test "${{ env.FUNCTION_TEST_PATH }}" -c Release --verbosity normal
+
+      - name: '[function] Publish'
+        if: ${{ inputs.acao == 'tudo' || inputs.acao == 'function' }}
+        run: dotnet publish "${{ env.FUNCTION_PROJECT_PATH }}" -c Release -o ./publish-f1 --no-build
+
+      - name: '[function] Deploy (Azure/functions-action via AZURE_CREDENTIALS — sem publish profile)'
+        if: ${{ inputs.acao == 'tudo' || inputs.acao == 'function' }}
+        uses: Azure/functions-action@v1
+        with:
+          # $FUNCTION_APP = func-f1-$SUFIXO (derivado do sufixo no step de resolução). Sem
+          # publish-profile: autentica pela sessão az GLOBAL (azure/login no topo, RBAC do SP).
+          # Deploy de CÓDIGO só — preserva os settings herdados (Sql/ServiceBus/GATEWAY_SHARED_SECRET
+          # do KV); pode gerenciar apenas o WEBSITE_RUN_FROM_PACKAGE (setting de MODO de deploy).
+          app-name: ${{ env.FUNCTION_APP }}
+          package: ./publish-f1
+
+      - name: '[function] Smoke (GET /api/v2/me responde — prova o MeFunction, sem compra) + checklist'
+        # GET DIRETO em /api/v2/me (sem Bearer, sem X-Gateway-Key): rota EXISTE → 401 (middleware
+        # fail-closed com o segredo do KV armado; OU MeFunction sem X-Entra-OID) — 403/2xx também
+        # = rota presente e é o estado ESPERADO. rota AUSENTE (deploy velho) → 404; warming → 5xx;
+        # sem conexão → 000. Retry SÓ enquanto TRANSITÓRIO (000/404/5xx); PASS só em 401/403/2xx —
+        # um 404 transitório logo após o zip-deploy não falha à toa, e um 5xx não passa falsamente. Zero banco.
+        if: ${{ inputs.acao == 'tudo' || inputs.acao == 'function' }}
+        run: |
+          set -euo pipefail
+          FN_HOST=$(az functionapp show -n "$FUNCTION_APP" -g "$RG" --query defaultHostName -o tsv)
+          CODE="000"
+          PASS=""
+          for i in $(seq 1 6); do
+            CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 "https://${FN_HOST}/api/v2/me" || echo "000")
+            echo "tentativa $i/6: GET /api/v2/me → HTTP $CODE"
+            case "$CODE" in
+              2??|401|403) PASS=1; break ;;      # rota presente (estado esperado) → PASS definitivo
+              000|404|5??) sleep 10 ;;           # transitório (conexão / reindex pós-deploy / warming) → re-tenta
+              *) break ;;                        # estável inesperado (400/405…) → não re-tenta; falha na decisão final
+            esac
+          done
+          if [ -n "$PASS" ]; then LABEL="401/403/2xx ⇒ MeFunction deployado"; else LABEL="sem prova de rota (404/5xx/000 persistente)"; fi
+          {
+            echo "### function (F1 — base v2 + JIT CIAM)"
+            echo "- Function App: \`$FUNCTION_APP\` — \`/api/v2/me\` HTTP $CODE ($LABEL)"
+            echo "- Smoke funcional (manual): login CIAM nato → compra v2 conclui (o JIT provisiona a linha em \`users\`)"
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ -z "$PASS" ]; then echo "::error::/api/v2/me terminou em HTTP ${CODE} (esperado 401/403/2xx). 404/5xx/000 persistente ⇒ MeFunction provavelmente ausente no deploy da F1 (código velho) — a compra do cliente nato-CIAM quebraria (Story 3.5)."; exit 1; fi
+          echo "function OK — /api/v2/me respondeu HTTP ${CODE} (rota presente)."
+
+      # =========================================================
+      # BLOCO mcp-server  (acao = tudo | mcp-server) — AC-8/9/10.
+      #   build+test → imagem → az containerapp update --image. ZERO secret set:
+      #   SQL/Gemini/X-Gateway-Key já vêm do Key Vault via KV reference + MI (pré-provisionado).
+      #   Ingress interno → smoke por revisão (az), sem curl público.
+      # =========================================================
+      - name: '[mcp-server] Build + Test'
+        if: ${{ inputs.acao == 'tudo' || inputs.acao == 'mcp-server' }}
+        run: |
+          set -euo pipefail
+          dotnet restore "${{ env.MCP_PROJECT_PATH }}"
+          dotnet build "${{ env.MCP_PROJECT_PATH }}" -c Release --no-restore
+          dotnet test "${{ env.MCP_TEST_PATH }}" -c Release --verbosity normal
+
+      - name: '[mcp-server] Build & push image + update (imagem só; secrets vêm do KV/MI)'
+        if: ${{ inputs.acao == 'tudo' || inputs.acao == 'mcp-server' }}
+        run: |
+          set -euo pipefail
+          IMAGE_TAG="${ACR_LOGIN_SERVER}/mcp-server:${{ github.sha }}"
+          docker build -t "$IMAGE_TAG" "${{ env.MCP_PROJECT_PATH }}"
+          docker push "$IMAGE_TAG"
+          az containerapp update --name "$MCP_APP" --resource-group "$RG" --image "$IMAGE_TAG"
+
+      - name: '[mcp-server] Smoke (revisão Provisioned/Running — ingress interno) + checklist'
+        if: ${{ inputs.acao == 'tudo' || inputs.acao == 'mcp-server' }}
+        run: |
+          set -uo pipefail
+          ok=""
+          for i in $(seq 1 6); do
+            PROV=$(az containerapp revision list -n "$MCP_APP" -g "$RG" \
+              --query "[?properties.active].properties.provisioningState | [0]" -o tsv 2>/dev/null || true)
+            RUN=$(az containerapp revision list -n "$MCP_APP" -g "$RG" \
+              --query "[?properties.active].properties.runningState | [0]" -o tsv 2>/dev/null || true)
+            echo "tentativa $i/6: provisioningState=${PROV:-?} runningState=${RUN:-?}"
+            if [ "$PROV" = "Provisioned" ] && [ "$RUN" = "Running" ]; then ok=1; break; fi
+            sleep 10
+          done
+          {
+            echo "### mcp-server (F5)"
+            echo "- McpServer: \`$MCP_APP\` (ingress interno — só via gateway)"
+            echo "- Smoke funcional (manual): \`tools/list\` = 7 tools read-only via gateway com Bearer CIAM"
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ -z "$ok" ]; then echo "::error::McpServer: revisão não ficou Provisioned/Running."; exit 1; fi
+          echo "mcp-server OK."
+
+      # =========================================================
+      # BLOCO gateway  (acao = tudo | gateway) — arma X-Gateway-Key no cluster mcp-server.
+      # =========================================================
+      - name: '[gateway] Build + Test'
+        if: ${{ inputs.acao == 'tudo' || inputs.acao == 'gateway' }}
+        run: |
+          set -euo pipefail
+          dotnet restore "${{ env.GATEWAY_PROJECT_PATH }}"
+          dotnet build "${{ env.GATEWAY_PROJECT_PATH }}" -c Release --no-restore
+          dotnet test "${{ env.GATEWAY_TEST_PATH }}" -c Release --verbosity normal
+
+      - name: '[gateway] Build & push image + update'
+        if: ${{ inputs.acao == 'tudo' || inputs.acao == 'gateway' }}
+        run: |
+          set -euo pipefail
+          IMAGE_TAG="${ACR_LOGIN_SERVER}/gateway:${{ github.sha }}"
+          docker build -t "$IMAGE_TAG" "${{ env.GATEWAY_PROJECT_PATH }}"
+          docker push "$IMAGE_TAG"
+          az containerapp update --name "$GATEWAY_APP" --resource-group "$RG" --image "$IMAGE_TAG"
+
+      - name: '[gateway] Smoke (401 sem token + /health 200) + URLs'
+        if: ${{ inputs.acao == 'tudo' || inputs.acao == 'gateway' }}
+        run: |
+          set -euo pipefail
+          FQDN=$(az containerapp show -n "$GATEWAY_APP" -g "$RG" \
+            --query properties.configuration.ingress.fqdn -o tsv)
+          sleep 20
+          CODE=$(curl -s -o /dev/null -w '%{http_code}' "https://${FQDN}/purchase" \
+            -X POST -H "Content-Type: application/json" \
+            -d '{"matchId":1,"category":"VIP","userId":1,"quantity":1}')
+          echo "POST /purchase sem token → HTTP $CODE (esperado 401)."
+          test "$CODE" = "401"
+          curl -fsS "https://${FQDN}/health" >/dev/null
+          {
+            echo "### gateway (Blindar)"
+            echo "- Gateway: https://${FQDN} — \`/health\` 200, 401 sem token (fail-closed)"
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "gateway OK."
+
+      # =========================================================
+      # BLOCO flow-events  (acao = tudo | flow-events) — ingress externo/WebSocket.
+      # =========================================================
+      - name: '[flow-events] Build + Test'
+        if: ${{ inputs.acao == 'tudo' || inputs.acao == 'flow-events' }}
+        run: |
+          set -euo pipefail
+          dotnet restore "${{ env.FLOW_PROJECT_PATH }}"
+          dotnet build "${{ env.FLOW_PROJECT_PATH }}" -c Release --no-restore
+          dotnet test "${{ env.FLOW_TEST_PATH }}" -c Release --verbosity normal
+
+      - name: '[flow-events] Build & push image + update'
+        if: ${{ inputs.acao == 'tudo' || inputs.acao == 'flow-events' }}
+        run: |
+          set -euo pipefail
+          IMAGE_TAG="${ACR_LOGIN_SERVER}/flow-events:${{ github.sha }}"
+          docker build -t "$IMAGE_TAG" "${{ env.FLOW_PROJECT_PATH }}"
+          docker push "$IMAGE_TAG"
+          az containerapp update --name "$FLOW_APP" --resource-group "$RG" --image "$IMAGE_TAG"
+
+      - name: '[flow-events] Smoke (/health) + checklist'
+        if: ${{ inputs.acao == 'tudo' || inputs.acao == 'flow-events' }}
+        run: |
+          set -euo pipefail
+          FQDN=$(az containerapp show -n "$FLOW_APP" -g "$RG" \
+            --query properties.configuration.ingress.fqdn -o tsv)
+          sleep 20
+          curl -fsS "https://${FQDN}/health" >/dev/null
+          {
+            echo "### flow-events (F6)"
+            echo "- FlowEvents: https://${FQDN} — \`/health\` OK"
+            echo "- Smoke funcional (manual): comprar → \`/flow\` → bolinha atravessa 5 nós < 30s"
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "flow-events OK."
+
+      # =========================================================
+      # BLOCO frontend  (acao = tudo | frontend) — AC-5/6.
+      #   URLs resolvidas por az ... --query (não hardcoded); identidade lida dos App Settings
+      #   do frontend existente (semeados pelo instrutor); deploy via AZURE_CREDENTIALS
+      #   (az webapp deploy) — sem publish profile. Guard: nenhuma key de LLM no bundle.
+      # =========================================================
+      - name: '[frontend] Setup Node.js'
+        if: ${{ inputs.acao == 'tudo' || inputs.acao == 'frontend' }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: ${{ env.FRONTEND_WORKING_DIR }}/package-lock.json
+
+      - name: '[frontend] Resolver URLs (az --query) + identidade (App Settings) — zero input do aluno'
+        if: ${{ inputs.acao == 'tudo' || inputs.acao == 'frontend' }}
+        run: |
+          set -euo pipefail
+          # URLs por consulta dinâmica (AC-5) — nunca hardcoded.
+          GW_FQDN=$(az containerapp show -n "$GATEWAY_APP" -g "$RG" \
+            --query properties.configuration.ingress.fqdn -o tsv)
+          BK_HOST=$(az webapp show -n "$BACKEND_APP" -g "$RG" --query defaultHostName -o tsv)
+          FN_HOST=$(az functionapp show -n "$FUNCTION_APP" -g "$RG" --query defaultHostName -o tsv)
+          # Identidade (AC-6/[AUTO-DECISION]) — lida dos App Settings do frontend existente
+          # (semeados pelo instrutor no pré-provisionamento), não redigitada pelo aluno.
+          get() { az webapp config appsettings list -n "$FRONTEND_APP" -g "$RG" \
+            --query "[?name=='$1'].value | [0]" -o tsv 2>/dev/null || true; }
+          CIAM_AUTH=$(get VITE_CIAM_AUTHORITY)
+          CIAM_CID=$(get VITE_CIAM_CLIENT_ID)
+          ADMIN_TID=$(get VITE_ADMIN_TENANT_ID)
+          ADMIN_CID=$(get VITE_ADMIN_CLIENT_ID)
+          ADMIN_SCOPE=$(get VITE_ADMIN_SCOPE)
+          # Fail-fast SIMÉTRICO: TODAS as VITE_* de identidade são obrigatórias para o app
+          # funcionar — tanto o login do cliente (CIAM) quanto o do admin (workforce). Semear
+          # só metade deixaria um dos dois logins morto no bundle. (Blocos `if` — nunca `&&` —
+          # para não disparar o `set -e` quando o teste for falso/variável presente.)
+          MISSING=""
+          if [ -z "$CIAM_AUTH" ];   then MISSING="$MISSING VITE_CIAM_AUTHORITY"; fi
+          if [ -z "$CIAM_CID" ];    then MISSING="$MISSING VITE_CIAM_CLIENT_ID"; fi
+          if [ -z "$ADMIN_TID" ];   then MISSING="$MISSING VITE_ADMIN_TENANT_ID"; fi
+          if [ -z "$ADMIN_CID" ];   then MISSING="$MISSING VITE_ADMIN_CLIENT_ID"; fi
+          if [ -z "$ADMIN_SCOPE" ]; then MISSING="$MISSING VITE_ADMIN_SCOPE"; fi
+          if [ -n "$MISSING" ]; then
+            echo "::error::Identidade ausente nos App Settings do frontend ($FRONTEND_APP):${MISSING}. O instrutor deve semear TODAS as VITE_* de identidade (CIAM + admin workforce) no pré-provisionamento (runbook browser-harness — Story 4.5 Task 5). Ver AC-6/[AUTO-DECISION]."
+            exit 1
+          fi
+          {
+            echo "VITE_GATEWAY_V2_URL=https://${GW_FQDN}"
+            echo "VITE_LLM_PROXY_URL=https://${GW_FQDN}"
+            echo "VITE_LLM_PROVIDER=gemini"
+            echo "VITE_FLOW_EVENTS_BASE_URL=https://${GW_FQDN}/flow-events"
+            echo "BACKEND_URL=https://${BK_HOST}"
+            echo "VITE_FUNCTION_V2_URL=https://${FN_HOST}"
+            echo "VITE_CIAM_AUTHORITY=${CIAM_AUTH}"
+            echo "VITE_CIAM_CLIENT_ID=${CIAM_CID}"
+            echo "VITE_ADMIN_TENANT_ID=${ADMIN_TID}"
+            echo "VITE_ADMIN_CLIENT_ID=${ADMIN_CID}"
+            echo "VITE_ADMIN_SCOPE=${ADMIN_SCOPE}"
+          } >> "$GITHUB_ENV"
+          echo "URLs e identidade resolvidas dinamicamente (zero entrada manual)."
+
+      - name: '[frontend] Install + Build (vite) — chatbot + /flow + baseline de identidade'
+        if: ${{ inputs.acao == 'tudo' || inputs.acao == 'frontend' }}
+        working-directory: ${{ env.FRONTEND_WORKING_DIR }}
+        env:
+          VITE_API_URL: /api
+        run: |
+          set -euo pipefail
+          npm ci
+          # Story 4.6 (Diploma vivo) — hora do deploy INJETADA NO BUILD (infalsificável: nasce
+          # no runner do CI, nunca no navegador do aluno — AC-3). Vite expõe VITE_* de process.env.
+          export VITE_BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          npm run build
+
+      - name: '[frontend] Guard — nenhuma API key de LLM vazou no bundle'
+        if: ${{ inputs.acao == 'tudo' || inputs.acao == 'frontend' }}
+        working-directory: ${{ env.FRONTEND_WORKING_DIR }}
+        run: |
+          set -euo pipefail
+          if grep -rqE 'gsk_[A-Za-z0-9]|AIza[0-9A-Za-z_-]{20,}|GEMINI_API_KEY|GROQ_API_KEY|MISTRAL_API_KEY' dist/assets/*.js; then
+            echo "::error::Possível API key de LLM no bundle — a key deve ficar SOMENTE no Key Vault / proxy server-side."
+            exit 1
+          fi
+          echo "Guard OK — nenhuma key de LLM no bundle."
+
+      - name: '[frontend] Deploy (az webapp deploy via AZURE_CREDENTIALS — sem publish profile) + URL'
+        if: ${{ inputs.acao == 'tudo' || inputs.acao == 'frontend' }}
+        run: |
+          set -euo pipefail
+          # DEPLOY via `az webapp deploy --type zip` — INTENCIONAL, NÃO um desvio do padrão dos labs
+          # anteriores. As Quartas usam `azure/webapps-deploy@v3` + `publish-profile` (secrets.
+          # AZURE_FRONTEND_PUBLISH_PROFILE); a entrega da Final ELIMINA os publish profiles no colapso
+          # 15→1 (AC-7 — único secret = AZURE_CREDENTIALS). `az webapp deploy` autentica pela sessão
+          # `az` (token AAD do Service Principal), então NÃO depende de SCM basic auth nem de publish
+          # profile, e é o sucessor recomendado do `config-zip` (deprecado). O bundle já foi buildado
+          # no step anterior (`npm run build` → dist/); aqui só zipa dist/ e publica.
+          ( cd "${{ env.FRONTEND_WORKING_DIR }}/dist" && zip -qr ../dist.zip . )
+          az webapp deploy --resource-group "$RG" --name "$FRONTEND_APP" \
+            --src-path "${{ env.FRONTEND_WORKING_DIR }}/dist.zip" --type zip
+          FE_HOST=$(az webapp show -n "$FRONTEND_APP" -g "$RG" --query defaultHostName -o tsv)
+          {
+            echo "### frontend (chatbot + /flow + Diploma)"
+            echo "- Frontend: https://${FE_HOST}"
+            # Story 4.6 (AC-1) — o Diploma vivo é "surfaced" aqui (link no checkpoint final),
+            # sem duplicar código React no Template Repo. Telemetria real do aluno.
+            echo "- 🏆 Seu Diploma vivo: https://${FE_HOST}/diploma — a Copa que você construiu te responde"
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "frontend OK — https://${FE_HOST}"

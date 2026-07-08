@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { ShoppingCart, User, Menu, X, Trophy, Ticket, MapPin, Calendar, Users, BarChart3, Brain, History } from 'lucide-react';
+import { ShoppingCart, User, Menu, X, Trophy, Ticket, MapPin, Calendar, Users, BarChart3, Brain, History, Award } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useCart } from '@/contexts/CartContext';
 import { useAuth } from '@/contexts/AuthContext';
@@ -16,6 +16,9 @@ const navLinks = [
   { href: '/teams', label: 'Seleções', icon: Trophy },
   { href: '/quiz', label: 'Quiz', icon: Brain },
   { href: '/historia', label: 'História', icon: History },
+  // Story 4.6 / Grande Final — Diploma vivo (clímax da aula). Aditivo: não altera nenhuma
+  // rota/fluxo existente (AC-9); dá descoberta ao Diploma sem depender só da URL do workflow.
+  { href: '/diploma', label: 'Diploma', icon: Award },
 ];
 
 export const Navbar: React.FC = () => {
