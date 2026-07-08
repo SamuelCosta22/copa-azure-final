@@ -69,17 +69,20 @@ public sealed class CiamOnlyFenceTests : IClassFixture<GatewayTestFixture>
         Assert.Contains(email, headers["X-Entra-Email"]);
         Assert.True(headers.ContainsKey("X-Entra-Name"));
         Assert.Contains(name, headers["X-Entra-Name"]);
+        // Story 3.5 fix — o flag de verificação acompanha o email (aqui: verificado).
+        Assert.True(headers.ContainsKey("X-Entra-Email-Verified"));
+        Assert.Contains("true", headers["X-Entra-Email-Verified"]);
     }
 
     [Fact]
-    public async Task CiamToken_OnMe_EmailNotVerified_OmitsEmailHeader_KeepsOidAndName()
+    public async Task CiamToken_OnMe_EmailNotVerified_ForwardsEmail_WithVerifiedFalseFlag()
     {
-        // A-1 (code review 2026-07-01) — sem email_verified, o gateway NÃO propaga X-Entra-Email
-        // (o arm de LINK por email exige posse comprovada, senão é account-takeover). O oid
-        // (identidade validada) e o name (não usado p/ autorização, só popula a coluna NOT NULL)
-        // continuam propagados. Consequência downstream: a MeFunction, sem X-Entra-Email, cai em
-        // 422 (InsufficientClaims) = fail-closed — coberto no nível da Function por
-        // MeFunctionTests.NoEmail_OidMisses_CannotProvision_Returns422.
+        // A-1 re-layer (Story 3.5 fix) — o email agora é propagado SEMPRE, junto de
+        // X-Entra-Email-Verified refletindo o claim email_verified. A decisão de segurança
+        // migra para a MeFunction: o arm de LINK (vincular a uma conta v1 EXISTENTE) exige
+        // verified=true (anti-takeover); o INSERT nato-CIAM não. Aqui o email NÃO é verificado
+        // → header presente + X-Entra-Email-Verified: false. O gating do LINK é coberto no nível
+        // da Function por MeFunctionTests.LinkByEmail_SkippedWhenEmailNotVerified_FallsToInsertNotLink.
         StubMe();
         const string oid = "cccccccc-1111-2222-3333-444444444444";
         const string email = "vitima@example.com"; // presente no token, mas NÃO verificado
@@ -95,9 +98,12 @@ public sealed class CiamOnlyFenceTests : IClassFixture<GatewayTestFixture>
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var log = _fixture.Backend.LogEntries.Last(e => e.RequestMessage.Path == "/api/v2/me");
         var headers = log.RequestMessage.Headers!;
-        Assert.True(headers.ContainsKey("X-Entra-OID"));    // identidade validada — sempre propagada
-        Assert.False(headers.ContainsKey("X-Entra-Email")); // A-1: email NÃO verificado → omitido
-        Assert.True(headers.ContainsKey("X-Entra-Name"));   // nome não exige verificação
+        Assert.True(headers.ContainsKey("X-Entra-OID"));             // identidade validada — sempre propagada
+        Assert.True(headers.ContainsKey("X-Entra-Email"));           // A-1 re-layer: email propagado SEMPRE
+        Assert.Contains(email, headers["X-Entra-Email"]);
+        Assert.True(headers.ContainsKey("X-Entra-Email-Verified"));  // flag acompanha o email
+        Assert.Contains("false", headers["X-Entra-Email-Verified"]); // NÃO verificado → false
+        Assert.True(headers.ContainsKey("X-Entra-Name"));            // nome não exige verificação
     }
 
     [Fact]
